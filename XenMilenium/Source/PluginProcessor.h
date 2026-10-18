@@ -1,7 +1,10 @@
 #pragma once
 
+#include "Parameters/StateDocument.h"
+
 #include <JuceHeader.h>
 #include <atomic>
+#include <memory>
 
 class XenMileniumAudioProcessor : public juce::AudioProcessor
 {
@@ -40,9 +43,16 @@ public:
     int getLastNoteNumber() const noexcept;
     int getNoteOnCount() const noexcept;
 
+    juce::AudioProcessorValueTreeState& getValueTreeState() noexcept;
+    const juce::AudioProcessorValueTreeState& getValueTreeState() const noexcept;
+    juce::String saveStateDocument() const;
+    bool restoreStateDocument(const juce::String& document);
+
 private:
     void handleMidi(const juce::MidiBuffer& midi);
 
+    juce::AudioProcessorValueTreeState apvts;
+    std::unique_ptr<xenmilenium::StoredDocument> document;
     std::atomic<int> lastNoteNumber { -1 };
     std::atomic<int> noteOnCount { 0 };
     double currentSampleRate = 0.0;

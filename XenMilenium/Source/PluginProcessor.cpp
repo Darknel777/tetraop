@@ -1,8 +1,11 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "Parameters/ParameterRegistry.h"
 
 XenMileniumAudioProcessor::XenMileniumAudioProcessor()
-    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
+    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+      apvts(*this, nullptr, juce::Identifier("XenMileniumParameters"), xenmilenium::ParameterRegistry::createLayout()),
+      document(std::make_unique<xenmilenium::StoredDocument>(xenmilenium::makeInitialDocument()))
 {
 }
 
@@ -120,12 +123,36 @@ void XenMileniumAudioProcessor::changeProgramName(int index, const juce::String&
 
 void XenMileniumAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    juce::ignoreUnused(destData);
+    const auto documentText = saveStateDocument();
+    destData.replaceAll(documentText.toRawUTF8(), documentText.getNumBytesAsUTF8());
 }
 
 void XenMileniumAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    juce::ignoreUnused(data, sizeInBytes);
+    if (data == nullptr || sizeInBytes <= 0)
+        return;
+
+    restoreStateDocument(juce::String::fromUTF8(static_cast<const char*>(data), sizeInBytes));
+}
+
+juce::AudioProcessorValueTreeState& XenMileniumAudioProcessor::getValueTreeState() noexcept
+{
+    return apvts;
+}
+
+const juce::AudioProcessorValueTreeState& XenMileniumAudioProcessor::getValueTreeState() const noexcept
+{
+    return apvts;
+}
+
+juce::String XenMileniumAudioProcessor::saveStateDocument() const
+{
+    return xenmilenium::serialiseDocument(apvts, *document);
+}
+
+bool XenMileniumAudioProcessor::restoreStateDocument(const juce::String& documentText)
+{
+    return xenmilenium::deserialiseDocument(documentText, apvts, *document);
 }
 
 int XenMileniumAudioProcessor::getLastNoteNumber() const noexcept

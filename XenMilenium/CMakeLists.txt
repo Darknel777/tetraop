@@ -48,7 +48,11 @@ target_sources(XenMilenium
         Source/PluginProcessor.h
         Source/PluginProcessor.cpp
         Source/PluginEditor.h
-        Source/PluginEditor.cpp)
+        Source/PluginEditor.cpp
+        Source/Parameters/ParameterRegistry.h
+        Source/Parameters/ParameterRegistry.cpp
+        Source/Parameters/StateDocument.h
+        Source/Parameters/StateDocument.cpp)
 
 target_include_directories(XenMilenium PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
@@ -76,10 +80,15 @@ juce_generate_juce_header(XenMilenium_Smoke)
 target_sources(XenMilenium_Smoke
     PRIVATE
         Tests/SilenceAndMidiSmoke.cpp
+        Tests/StateAndParameterTests.cpp
         Source/PluginProcessor.h
         Source/PluginProcessor.cpp
         Source/PluginEditor.h
-        Source/PluginEditor.cpp)
+        Source/PluginEditor.cpp
+        Source/Parameters/ParameterRegistry.h
+        Source/Parameters/ParameterRegistry.cpp
+        Source/Parameters/StateDocument.h
+        Source/Parameters/StateDocument.cpp)
 
 target_include_directories(XenMilenium_Smoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
@@ -88,7 +97,8 @@ target_compile_definitions(XenMilenium_Smoke
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0)
+        JUCE_DISPLAY_SPLASH_SCREEN=0
+        XEN_MILENIUM_EMPTY_PRESET_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Docs/EMPTY_PRESET_EXAMPLE.json")
 
 target_compile_features(XenMilenium_Smoke PRIVATE cxx_std_17)
 

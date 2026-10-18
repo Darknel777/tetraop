@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
 
+int runStateAndParameterTests();
+
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -115,6 +117,10 @@ int main()
         return fail("zero-length block changed its dimensions");
 
     processor.releaseResources();
+
+    if (const int stateResult = runStateAndParameterTests())
+        return stateResult;
+
     std::cout << "smoke ok\n";
     return 0;
 }

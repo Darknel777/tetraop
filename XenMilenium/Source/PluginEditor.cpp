@@ -11,7 +11,7 @@ XenMileniumAudioProcessorEditor::XenMileniumAudioProcessorEditor(XenMileniumAudi
     addAndMakeVisible(titleLabel);
 
     scaffoldLabel.setText(juce::String::fromUTF8(
-                              "Начальный каркас / initial scaffold (этап 0). Звуковой движок не реализован."),
+                              "Параметры и сохранение состояния. Звуковой движок не реализован."),
                           juce::dontSendNotification);
     scaffoldLabel.setJustificationType(juce::Justification::centred);
     scaffoldLabel.setColour(juce::Label::textColourId, juce::Colours::white);
