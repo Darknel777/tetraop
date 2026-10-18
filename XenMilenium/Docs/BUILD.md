@@ -14,7 +14,7 @@
 
 Источник: `https://github.com/juce-framework/JUCE.git`.
 
-Подключение: `FetchContent` в корневом `CMakeLists.txt`, не локальная копия. Каталог `libs/JUCE` этого чекаута — пустой подмодуль другого продукта и в сборку не входит.
+Подключение: `FetchContent` в `XenMilenium/CMakeLists.txt`, не локальная копия. Каталог `libs/JUCE` родительского чекаута — пустой подмодуль другого продукта и в сборку не входит.
 
 Отдельный Steinberg VST3 SDK не устанавливался. Заголовки VST3 приходят вместе с JUCE. В собранном `moduleinfo.json` указано `SDKVersion` `VST 3.8.0`.
 
@@ -22,13 +22,13 @@
 
 ## Конфигурация и сборка
 
-Рабочий каталог: `/workspace`.
+Каталог исходников: `/workspace/XenMilenium`. Его не нужно передавать в корневой CMake TetraOP.
 
-Каталог сборки: `/workspace/build-xen-milenium`. Это не системный каталог VST3. `COPY_PLUGIN_AFTER_BUILD` выключен.
+Каталог сборки: `/workspace/XenMilenium/build-xen-milenium`. Это не каталог `build` TetraOP и не системный каталог VST3. `COPY_PLUGIN_AFTER_BUILD` выключен.
 
 ```bash
-cmake -S /workspace -B /workspace/build-xen-milenium -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
-cmake --build /workspace/build-xen-milenium --config Release --target XenMilenium_VST3 -j2
+cmake -S /workspace/XenMilenium -B /workspace/XenMilenium/build-xen-milenium -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+cmake --build /workspace/XenMilenium/build-xen-milenium --config Release --target XenMilenium_VST3 -j2
 ```
 
 Цель формата VST3 называется `XenMilenium_VST3`. Генератор по умолчанию — Unix Makefiles. Ninja не установлен.
@@ -37,7 +37,7 @@ cmake --build /workspace/build-xen-milenium --config Release --target XenMileniu
 
 ## Куда кладётся результат
 
-`/workspace/build-xen-milenium/XenMilenium_artefacts/Release/VST3/Xen Milenium.vst3`
+`/workspace/XenMilenium/build-xen-milenium/XenMilenium_artefacts/Release/VST3/Xen Milenium.vst3`
 
 Внутри бандла:
 
@@ -47,9 +47,9 @@ cmake --build /workspace/build-xen-milenium --config Release --target XenMileniu
 Проверка без DAW:
 
 ```bash
-cmake --build /workspace/build-xen-milenium --config Release --target XenMilenium_Smoke -j2
-/workspace/build-xen-milenium/XenMilenium_Smoke_artefacts/Release/XenMilenium_Smoke
-python3 Tests/check_vst3_identity.py /workspace/build-xen-milenium
+cmake --build /workspace/XenMilenium/build-xen-milenium --config Release --target XenMilenium_Smoke -j2
+/workspace/XenMilenium/build-xen-milenium/XenMilenium_Smoke_artefacts/Release/XenMilenium_Smoke
+python3 /workspace/XenMilenium/Tests/check_vst3_identity.py /workspace/XenMilenium/build-xen-milenium
 ```
 
 ## Ограничения
