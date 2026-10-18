@@ -1,0 +1,144 @@
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+XenMileniumAudioProcessor::XenMileniumAudioProcessor()
+    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
+{
+}
+
+XenMileniumAudioProcessor::~XenMileniumAudioProcessor() = default;
+
+void XenMileniumAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+    juce::ignoreUnused(samplesPerBlock);
+    currentSampleRate = sampleRate;
+}
+
+void XenMileniumAudioProcessor::releaseResources()
+{
+}
+
+bool XenMileniumAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
+{
+    const auto output = layouts.getMainOutputChannelSet();
+    const auto input = layouts.getMainInputChannelSet();
+    return input.isDisabled() && output == juce::AudioChannelSet::stereo();
+}
+
+void XenMileniumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+    buffer.clear();
+    handleMidi(midi);
+    midi.clear();
+}
+
+void XenMileniumAudioProcessor::processBlockBypassed(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+    buffer.clear();
+    midi.clear();
+}
+
+void XenMileniumAudioProcessor::handleMidi(const juce::MidiBuffer& midi)
+{
+    for (const auto metadata : midi)
+    {
+        const auto message = metadata.getMessage();
+        if (! message.isNoteOn())
+            continue;
+
+        const int note = message.getNoteNumber();
+        if (note < 0 || note > 127)
+            continue;
+
+        lastNoteNumber.store(note, std::memory_order_relaxed);
+        noteOnCount.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+juce::AudioProcessorEditor* XenMileniumAudioProcessor::createEditor()
+{
+    return new XenMileniumAudioProcessorEditor(*this);
+}
+
+bool XenMileniumAudioProcessor::hasEditor() const
+{
+    return true;
+}
+
+const juce::String XenMileniumAudioProcessor::getName() const
+{
+    return "Xen Milenium";
+}
+
+bool XenMileniumAudioProcessor::acceptsMidi() const
+{
+    return true;
+}
+
+bool XenMileniumAudioProcessor::producesMidi() const
+{
+    return false;
+}
+
+bool XenMileniumAudioProcessor::isMidiEffect() const
+{
+    return false;
+}
+
+double XenMileniumAudioProcessor::getTailLengthSeconds() const
+{
+    return 0.0;
+}
+
+int XenMileniumAudioProcessor::getNumPrograms()
+{
+    return 1;
+}
+
+int XenMileniumAudioProcessor::getCurrentProgram()
+{
+    return 0;
+}
+
+void XenMileniumAudioProcessor::setCurrentProgram(int index)
+{
+    juce::ignoreUnused(index);
+}
+
+const juce::String XenMileniumAudioProcessor::getProgramName(int index)
+{
+    juce::ignoreUnused(index);
+    return "Default";
+}
+
+void XenMileniumAudioProcessor::changeProgramName(int index, const juce::String& newName)
+{
+    juce::ignoreUnused(index, newName);
+}
+
+void XenMileniumAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
+{
+    juce::ignoreUnused(destData);
+}
+
+void XenMileniumAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
+{
+    juce::ignoreUnused(data, sizeInBytes);
+}
+
+int XenMileniumAudioProcessor::getLastNoteNumber() const noexcept
+{
+    return lastNoteNumber.load(std::memory_order_relaxed);
+}
+
+int XenMileniumAudioProcessor::getNoteOnCount() const noexcept
+{
+    return noteOnCount.load(std::memory_order_relaxed);
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new XenMileniumAudioProcessor();
+}
