@@ -36,7 +36,14 @@ XenMileniumAudioProcessor::XenMileniumAudioProcessor()
         slot.mono = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(id("mono")));
         slot.legato = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(id("legato")));
         slot.midiChannel = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("midiChannel")));
-        slot.wave = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("o1.waveSource")));
+        slot.wave[0] = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("o1.waveSource")));
+        slot.wave[1] = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("o2.waveSource")));
+        slot.wave[2] = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("o3.waveSource")));
+        slot.osc1Level = floatSlot(apvts, id("mix.osc1").toRawUTF8());
+        slot.osc2Level = floatSlot(apvts, id("mix.osc2").toRawUTF8());
+        slot.ringLevel = floatSlot(apvts, id("mix.ring").toRawUTF8());
+        slot.noiseLevel = floatSlot(apvts, id("mix.noise").toRawUTF8());
+        slot.directOut = floatSlot(apvts, id("o3.directOut").toRawUTF8());
         slot.attack = floatSlot(apvts, id("amp.attack").toRawUTF8());
         slot.decay = floatSlot(apvts, id("amp.decay").toRawUTF8());
         slot.sustain = floatSlot(apvts, id("amp.sustain").toRawUTF8());
@@ -177,7 +184,15 @@ xenmilenium::EngineControls XenMileniumAudioProcessor::readControls() const noex
         destination.mono = slot.mono != nullptr && slot.mono->get();
         destination.legato = slot.legato != nullptr && slot.legato->get();
         destination.midiChannel = slot.midiChannel != nullptr ? slot.midiChannel->getIndex() : 0;
-        destination.wave = juce::jlimit(0, 3, slot.wave != nullptr ? slot.wave->getIndex() : 0);
+        for (int oscillator = 0; oscillator < xenmilenium::MinimalVoiceCore::oscillatorCount; ++oscillator)
+            destination.wave[static_cast<std::size_t>(oscillator)] = juce::jlimit(0, 3, slot.wave[static_cast<std::size_t>(oscillator)] != nullptr
+                                                                                            ? slot.wave[static_cast<std::size_t>(oscillator)]->getIndex()
+                                                                                            : 0);
+        destination.osc1Level = finiteOr(slot.osc1Level != nullptr ? slot.osc1Level->get() : 1.0f, 1.0f);
+        destination.osc2Level = finiteOr(slot.osc2Level != nullptr ? slot.osc2Level->get() : 0.0f, 0.0f);
+        destination.ringLevel = finiteOr(slot.ringLevel != nullptr ? slot.ringLevel->get() : 0.0f, 0.0f);
+        destination.noiseLevel = finiteOr(slot.noiseLevel != nullptr ? slot.noiseLevel->get() : 0.0f, 0.0f);
+        destination.directOut = finiteOr(slot.directOut != nullptr ? slot.directOut->get() : 0.0f, 0.0f);
         destination.attackSeconds = finiteOr(slot.attack != nullptr ? slot.attack->get() : 0.01f, 0.01f);
         destination.decaySeconds = finiteOr(slot.decay != nullptr ? slot.decay->get() : 0.2f, 0.2f);
         destination.sustain = finiteOr(slot.sustain != nullptr ? slot.sustain->get() : 0.8f, 0.8f);
@@ -302,6 +317,11 @@ int XenMileniumAudioProcessor::getActiveVoiceCountForPart(int partNumber) const 
     if (partNumber < 1 || partNumber > xenmilenium::MinimalVoiceCore::partCount)
         return 0;
     return voiceCore.activeVoiceCountForPart(partNumber - 1);
+}
+
+int XenMileniumAudioProcessor::getActiveTailCount() const noexcept
+{
+    return voiceCore.activeTailCount();
 }
 
 bool XenMileniumAudioProcessor::isNoteActive(int partNumber, int channel, int noteNumber) const noexcept

@@ -3,6 +3,7 @@
 int runStateAndParameterTests();
 int runMinimalCoreTests();
 int runEightPartTests();
+int runMixerAndPoolTests();
 
 #include <cmath>
 #include <cstdint>
@@ -159,6 +160,9 @@ int main()
 
     if (const int partResult = runEightPartTests())
         return partResult;
+
+    if (const int mixerResult = runMixerAndPoolTests())
+        return mixerResult;
 
     std::cout << "smoke ok\n";
     return 0;

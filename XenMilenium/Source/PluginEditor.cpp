@@ -11,7 +11,7 @@ XenMileniumAudioProcessorEditor::XenMileniumAudioProcessorEditor(XenMileniumAudi
     addAndMakeVisible(titleLabel);
 
     scaffoldLabel.setText(juce::String::fromUTF8(
-                              "Восемь партий: по одному осциллятору и огибающей.\nПолный синтезатор не сделан."),
+                              "Восемь партий, три осциллятора и микшер.\nФильтра, модуляции и эффектов нет."),
                           juce::dontSendNotification);
     scaffoldLabel.setJustificationType(juce::Justification::centred);
     scaffoldLabel.setColour(juce::Label::textColourId, juce::Colours::white);

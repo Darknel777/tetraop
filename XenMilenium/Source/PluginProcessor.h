@@ -46,6 +46,7 @@ public:
     int getNoteOnCount() const noexcept;
     int getActiveVoiceCount() const noexcept;
     int getActiveVoiceCountForPart(int partNumber) const noexcept;
+    int getActiveTailCount() const noexcept;
     bool isNoteActive(int partNumber, int channel, int noteNumber) const noexcept;
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept;
@@ -60,7 +61,12 @@ private:
         juce::AudioParameterBool* mono = nullptr;
         juce::AudioParameterBool* legato = nullptr;
         juce::AudioParameterChoice* midiChannel = nullptr;
-        juce::AudioParameterChoice* wave = nullptr;
+        std::array<juce::AudioParameterChoice*, 3> wave {};
+        juce::AudioParameterFloat* osc1Level = nullptr;
+        juce::AudioParameterFloat* osc2Level = nullptr;
+        juce::AudioParameterFloat* ringLevel = nullptr;
+        juce::AudioParameterFloat* noiseLevel = nullptr;
+        juce::AudioParameterFloat* directOut = nullptr;
         juce::AudioParameterFloat* attack = nullptr;
         juce::AudioParameterFloat* decay = nullptr;
         juce::AudioParameterFloat* sustain = nullptr;

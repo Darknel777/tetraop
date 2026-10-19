@@ -104,7 +104,7 @@ ParameterSpec floatSpec(juce::String apvtsId,
 std::vector<ParameterSpec> buildSpecs()
 {
     std::vector<ParameterSpec> specs;
-    specs.reserve(129);
+    specs.reserve(185);
 
     const auto midiChoices = midiChannelChoices();
     const auto modifiers = modifierChoices();
@@ -163,13 +163,67 @@ std::vector<ParameterSpec> buildSpecs()
                                        1));
         }
 
-        // Тот же контракт ядра, что у партии 1: форма осциллятора 1 и Amp. Не закон инструмента.
+        // Формы и уровни микшера — контракт этапа 1.5, не закон инструмента.
+        // Уровень 0 глушит источник. Отдельного включения осциллятора в схеме нет.
+        const auto waves = basicWaveChoices();
         specs.push_back(choiceSpec(partId(part, "o1.waveSource"),
                                    partPath(part, "osc/1/waveSource"),
                                    partLabel(part, "Osc 1 Wave"),
                                    ParameterScope::oscillator,
-                                   basicWaveChoices(),
+                                   waves,
                                    0));
+        specs.push_back(choiceSpec(partId(part, "o2.waveSource"),
+                                   partPath(part, "osc/2/waveSource"),
+                                   partLabel(part, "Osc 2 Wave"),
+                                   ParameterScope::oscillator,
+                                   waves,
+                                   0));
+        specs.push_back(choiceSpec(partId(part, "o3.waveSource"),
+                                   partPath(part, "osc/3/waveSource"),
+                                   partLabel(part, "Osc 3 Wave"),
+                                   ParameterScope::oscillator,
+                                   waves,
+                                   0));
+        specs.push_back(floatSpec(partId(part, "mix.osc1"),
+                                  partPath(part, "mixer/osc1"),
+                                  partLabel(part, "Mixer OSC1"),
+                                  ParameterScope::part,
+                                  0.0f,
+                                  1.0f,
+                                  1.0f,
+                                  "linear"));
+        specs.push_back(floatSpec(partId(part, "mix.osc2"),
+                                  partPath(part, "mixer/osc2"),
+                                  partLabel(part, "Mixer OSC2"),
+                                  ParameterScope::part,
+                                  0.0f,
+                                  1.0f,
+                                  0.0f,
+                                  "linear"));
+        specs.push_back(floatSpec(partId(part, "mix.ring"),
+                                  partPath(part, "mixer/ring"),
+                                  partLabel(part, "Mixer RING"),
+                                  ParameterScope::part,
+                                  0.0f,
+                                  1.0f,
+                                  0.0f,
+                                  "linear"));
+        specs.push_back(floatSpec(partId(part, "mix.noise"),
+                                  partPath(part, "mixer/noise"),
+                                  partLabel(part, "Mixer Noise"),
+                                  ParameterScope::part,
+                                  0.0f,
+                                  1.0f,
+                                  0.0f,
+                                  "linear"));
+        specs.push_back(floatSpec(partId(part, "o3.directOut"),
+                                  partPath(part, "osc/3/directOut"),
+                                  partLabel(part, "Osc 3 Direct Out"),
+                                  ParameterScope::oscillator,
+                                  0.0f,
+                                  1.0f,
+                                  0.0f,
+                                  "linear"));
         specs.push_back(floatSpec(partId(part, "amp.attack"),
                                   partPath(part, "env/amp/attack"),
                                   partLabel(part, "Amp Attack"),

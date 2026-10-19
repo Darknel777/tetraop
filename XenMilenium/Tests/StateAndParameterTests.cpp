@@ -94,7 +94,7 @@ const juce::var* property(const juce::var& object, const char* name)
 int checkRegistry()
 {
     const auto& specs = xenmilenium::ParameterRegistry::all();
-    if (specs.size() != 129)
+    if (specs.size() != 185)
         return fail("expected 129 registered parameters, got " + juce::String(static_cast<int>(specs.size())));
 
     std::unordered_set<std::uint32_t> studioOneHashes;

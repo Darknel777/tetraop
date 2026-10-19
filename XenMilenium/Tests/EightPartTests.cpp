@@ -284,34 +284,34 @@ int checkGlobalStealMonoAndPedal()
         setPlain(floatParameter(processor, (prefix + "/env/amp/sustain").toRawUTF8()), 1.0f);
         setPlain(floatParameter(processor, (prefix + "/env/amp/release").toRawUTF8()), 0.2f);
     }
-    processor.prepareToPlay(48000.0, 64);
-    juce::AudioBuffer<float> buffer(2, 64);
+    processor.prepareToPlay(48000.0, 128);
+    juce::AudioBuffer<float> buffer(2, 128);
     juce::MidiBuffer fill;
     int offset = 0;
     for (int part = 2; part <= 8; ++part)
-        for (int note = 0; note < 4; ++note)
-            fill.addEvent(juce::MidiMessage::noteOn(part, 48 + note, static_cast<juce::uint8>(80)), offset++);
-    for (int note = 0; note < 4; ++note)
-        fill.addEvent(juce::MidiMessage::noteOn(1, 70 + note, static_cast<juce::uint8>(80)), offset++);
+        for (int note = 0; note < 8; ++note)
+            fill.addEvent(juce::MidiMessage::noteOn(part, 36 + note, static_cast<juce::uint8>(80)), offset++);
+    for (int note = 0; note < 8; ++note)
+        fill.addEvent(juce::MidiMessage::noteOn(1, 60 + note, static_cast<juce::uint8>(80)), offset++);
     if (const int result = render(processor, buffer, fill))
         return result;
-    if (processor.getActiveVoiceCount() != 32 || processor.getActiveVoiceCountForPart(1) != 4 || processor.getActiveVoiceCountForPart(2) != 4)
-        return fail("global pool did not fill to the bench limit");
+    if (processor.getActiveVoiceCount() != 64 || processor.getActiveVoiceCountForPart(1) != 8 || processor.getActiveVoiceCountForPart(2) != 8)
+        return fail("independent pools did not reach 8 voices on every part");
 
     juce::MidiBuffer extra;
     extra.addEvent(juce::MidiMessage::noteOn(1, 90, static_cast<juce::uint8>(100)), 0);
     if (const int result = render(processor, buffer, extra))
         return result;
-    if (processor.getActiveVoiceCount() != 32 || processor.getActiveVoiceCountForPart(1) != 5 || processor.getActiveVoiceCountForPart(2) != 3)
-        return fail("global steal did not take the oldest voice from another part");
-    if (processor.isNoteActive(2, 2, 48) || ! processor.isNoteActive(1, 1, 90))
-        return fail("global steal replaced the wrong note");
+    if (processor.getActiveVoiceCount() != 64 || processor.getActiveVoiceCountForPart(1) != 8 || processor.getActiveVoiceCountForPart(2) != 8)
+        return fail("a full part changed another part's voice count");
+    if (! processor.isNoteActive(2, 2, 36) || processor.isNoteActive(1, 1, 60) || ! processor.isNoteActive(1, 1, 90))
+        return fail("part 1 stole outside itself or kept the displaced note");
 
     processor.releaseResources();
 
     XenMileniumAudioProcessor mono;
     setBool(boolParameter(mono, "part/1/mono"), true);
-    setPlain(floatParameter(mono, "part/1/env/amp/attack"), 0.05f);
+    setPlain(floatParameter(mono, "part/1/env/amp/attack"), 0.001f);
     setPlain(floatParameter(mono, "part/1/env/amp/decay"), 0.001f);
     setPlain(floatParameter(mono, "part/1/env/amp/sustain"), 0.25f);
     setPlain(floatParameter(mono, "part/1/env/amp/release"), 0.2f);
@@ -327,18 +327,25 @@ int checkGlobalStealMonoAndPedal()
         return result;
     const double held = meanAbs(level);
 
+    setPlain(floatParameter(mono, "part/1/env/amp/attack"), 0.05f);
+    setPlain(floatParameter(mono, "part/1/env/amp/decay"), 0.5f);
     juce::MidiBuffer second;
     second.addEvent(juce::MidiMessage::noteOn(1, 67, static_cast<juce::uint8>(127)), 0);
     if (const int result = render(mono, level, second))
         return result;
-    juce::AudioBuffer<float> risen(2, 1024);
+    juce::AudioBuffer<float> skipRise(2, 2048);
+    if (const int result = render(mono, skipRise, settle))
+        return result;
+    juce::AudioBuffer<float> risen(2, 2048);
     if (const int result = render(mono, risen, settle))
         return result;
     if (mono.getActiveVoiceCountForPart(1) != 1 || mono.isNoteActive(1, 1, 60) || ! mono.isNoteActive(1, 1, 67))
         return fail("mono kept more than one note");
-    if (! (meanAbs(risen) > held * 1.8))
+    if (! (meanAbs(risen) > held * 2.0))
         return fail("mono did not restart the envelope toward full level");
 
+    setPlain(floatParameter(mono, "part/1/env/amp/attack"), 0.05f);
+    setPlain(floatParameter(mono, "part/1/env/amp/decay"), 0.001f);
     setBool(boolParameter(mono, "part/1/mono"), false);
     setBool(boolParameter(mono, "part/1/legato"), true);
     juce::MidiBuffer back;

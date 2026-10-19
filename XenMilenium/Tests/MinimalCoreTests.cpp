@@ -306,7 +306,7 @@ int checkPolyphonyAndPool()
 
 int checkBlockSizes()
 {
-    const int sizes[] = { 1, 17, 32, 64, 128, 256, 512, 1024 };
+    const int sizes[] = { 1, 16, 17, 32, 64, 128, 256, 512, 1024 };
     for (const int size : sizes)
     {
         XenMileniumAudioProcessor processor;
@@ -648,11 +648,23 @@ int checkCoreParameters()
     if (! juce::approximatelyEqual(waveParameter->convertTo0to1(3.0f), 1.0f))
         return fail("wave source normalisation is not index / 3");
 
-    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/2/waveSource") != nullptr
-        || xenmilenium::ParameterRegistry::findByStatePath("part/1/env/amp/level") != nullptr
+    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/env/amp/level") != nullptr
         || xenmilenium::ParameterRegistry::findByStatePath("part/1/volume") != nullptr
-        || xenmilenium::ParameterRegistry::findByStatePath("part/1/env/filter/attack") != nullptr)
+        || xenmilenium::ParameterRegistry::findByStatePath("part/1/env/filter/attack") != nullptr
+        || xenmilenium::ParameterRegistry::findByStatePath("part/1/mixer/noiseType") != nullptr
+        || xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/1/directOut") != nullptr)
         return fail("engine registered a parameter outside its set");
+    const auto* osc2Wave = xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/2/waveSource");
+    const auto* osc1Level = xenmilenium::ParameterRegistry::findByStatePath("part/1/mixer/osc1");
+    const auto* osc2Level = xenmilenium::ParameterRegistry::findByStatePath("part/1/mixer/osc2");
+    const auto* directOut = xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/3/directOut");
+    if (osc2Wave == nullptr || osc2Wave->apvtsId != "xm.p1.o2.waveSource" || osc2Wave->choices.size() != 4
+        || osc1Level == nullptr || osc1Level->apvtsId != "xm.p1.mix.osc1"
+        || ! juce::approximatelyEqual(osc1Level->defaultFloat, 1.0f)
+        || osc2Level == nullptr || ! juce::approximatelyEqual(osc2Level->defaultFloat, 0.0f)
+        || directOut == nullptr || directOut->apvtsId != "xm.p1.o3.directOut"
+        || ! juce::approximatelyEqual(directOut->defaultFloat, 0.0f))
+        return fail("oscillator or mixer contract mismatch");
     const auto* partEightWave = xenmilenium::ParameterRegistry::findByStatePath("part/8/osc/1/waveSource");
     const auto* partEightAttack = xenmilenium::ParameterRegistry::findByStatePath("part/8/env/amp/attack");
     if (partEightWave == nullptr || partEightWave->apvtsId != "xm.p8.o1.waveSource"
@@ -703,17 +715,17 @@ int checkCoreParameters()
         || ! boolParameter(restored, "part/8/enabled")->get())
         return fail("missing core keys did not return to defaults");
 
-    if (! restored.restoreStateDocument("{\"formatVersion\":1,\"parameters\":{\"part/1/osc/2/waveSource\":\"wt/analog\"}}"))
-        return fail("unregistered wave source was rejected");
+    if (! restored.restoreStateDocument("{\"formatVersion\":1,\"parameters\":{\"part/1/mixer/noiseType\":\"pink\"}}"))
+        return fail("unregistered noise type was rejected");
     juce::var parsed;
     juce::JSON::parse(restored.saveStateDocument(), parsed);
     const auto unknown = parsed.getProperty("unknown", {}).getProperty("parameters", {});
     const auto* unknownObject = unknown.getDynamicObject();
     const auto* preserved = unknownObject != nullptr
-                                ? unknownObject->getProperties().getVarPointer(juce::Identifier("part/1/osc/2/waveSource"))
+                                ? unknownObject->getProperties().getVarPointer(juce::Identifier("part/1/mixer/noiseType"))
                                 : nullptr;
-    if (preserved == nullptr || preserved->toString() != "wt/analog")
-        return fail("table id on an unregistered oscillator was not preserved");
+    if (preserved == nullptr || preserved->toString() != "pink")
+        return fail("unregistered noise type was not preserved");
 
     processor.releaseResources();
     restored.releaseResources();
