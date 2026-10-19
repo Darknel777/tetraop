@@ -5,6 +5,7 @@ int runMinimalCoreTests();
 int runEightPartTests();
 int runMixerAndPoolTests();
 int runFilterLfoTests();
+int runMsegMatrixTests();
 
 #include <cmath>
 #include <cstdint>
@@ -167,6 +168,9 @@ int main()
 
     if (const int filterResult = runFilterLfoTests())
         return filterResult;
+
+    if (const int matrixResult = runMsegMatrixTests())
+        return matrixResult;
 
     std::cout << "smoke ok\n";
     return 0;

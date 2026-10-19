@@ -94,8 +94,8 @@ const juce::var* property(const juce::var& object, const char* name)
 int checkRegistry()
 {
     const auto& specs = xenmilenium::ParameterRegistry::all();
-    if (specs.size() != 513)
-        return fail("expected 513 registered parameters, got " + juce::String(static_cast<int>(specs.size())));
+    if (specs.size() != 1569)
+        return fail("expected 1569 registered parameters, got " + juce::String(static_cast<int>(specs.size())));
 
     std::unordered_set<std::uint32_t> studioOneHashes;
     std::unordered_set<std::uint32_t> rawHashes;
@@ -148,8 +148,21 @@ int checkRegistry()
         return fail("cutoff range is not the stage 1.6 core contract");
     if (xenmilenium::ParameterRegistry::findByStatePath("part/1/filter/saturation") != nullptr)
         return fail("filter saturation was registered without a model");
-    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/matrix/slot/1/amount") != nullptr)
-        return fail("matrix amount was registered as a fake parameter");
+    const auto* matrixAmount = xenmilenium::ParameterRegistry::findByStatePath("part/1/matrix/slot/1/amount");
+    if (matrixAmount == nullptr || matrixAmount->kind != xenmilenium::ParameterKind::floatValue
+        || matrixAmount->apvtsId != "xm.p1.s1.amt"
+        || ! juce::approximatelyEqual(matrixAmount->minimum, -1.0f)
+        || ! juce::approximatelyEqual(matrixAmount->maximum, 1.0f)
+        || ! juce::approximatelyEqual(matrixAmount->defaultFloat, 0.0f))
+        return fail("matrix amount is not the stage 1.7 slot depth");
+    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/matrix/slot/1/polarity") != nullptr
+        || xenmilenium::ParameterRegistry::findByStatePath("part/1/matrix/slot/1/scope") != nullptr)
+        return fail("matrix polarity or scope was registered");
+    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/mseg/1/points") != nullptr)
+        return fail("MSEG points were registered as a parameter");
+    const auto* msegMode = xenmilenium::ParameterRegistry::findByStatePath("part/8/mseg/4/mode");
+    if (msegMode == nullptr || msegMode->apvtsId != "xm.p8.m4.mode" || msegMode->defaultChoice != 0)
+        return fail("MSEG mode was not registered");
 
     return 0;
 }
@@ -312,12 +325,22 @@ int checkEmptyExample()
     const auto* unison = property(unknownParameters, "part/1/osc/1/unison");
     const auto* cutoff = property(unknownParameters, "part/1/filter/cutoff");
     const auto* amount = property(unknownParameters, "part/1/matrix/slot/1/amount");
+    const auto* points = property(unknownParameters, "part/1/mseg/1/points");
     if (unison == nullptr || static_cast<int>(*unison) != 1)
         return fail("unison from the example was not preserved outside APVTS");
     if (cutoff != nullptr)
         return fail("null cutoff was stored as a value");
-    if (amount == nullptr || static_cast<int>(*amount) != 0)
-        return fail("matrix amount was not preserved as state");
+    if (amount != nullptr)
+        return fail("registered matrix amount stayed in unknown parameters");
+    if (points == nullptr || ! points->isArray())
+        return fail("empty example dropped MSEG points");
+    auto* matrixAmount = floatParameter(processor, "part/1/matrix/slot/1/amount");
+    auto* matrixEnable = boolParameter(processor, "part/1/matrix/slot/1/enable");
+    auto* matrixSource = choiceParameter(processor, "part/1/matrix/slot/1/source");
+    if (matrixAmount == nullptr || ! juce::approximatelyEqual(matrixAmount->get(), 0.0f)
+        || matrixEnable == nullptr || matrixEnable->get()
+        || matrixSource == nullptr || matrixSource->getCurrentChoiceName() != "off")
+        return fail("empty example did not keep the matrix slot at zero");
     if (property(*property(parsed, "parameters"), "part/1/enabled") == nullptr)
         return fail("registered path disappeared after loading the example");
 

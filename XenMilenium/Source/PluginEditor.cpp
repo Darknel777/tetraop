@@ -11,7 +11,7 @@ XenMileniumAudioProcessorEditor::XenMileniumAudioProcessorEditor(XenMileniumAudi
     addAndMakeVisible(titleLabel);
 
     scaffoldLabel.setText(juce::String::fromUTF8(
-                              "Восемь партий, фильтр, огибающая фильтра и четыре LFO.\nГрафического интерфейса синтезатора и эффектов нет."),
+                              "Восемь партий, фильтр, MSEG и матрица модуляции.\nГрафического интерфейса синтезатора и эффектов нет."),
                           juce::dontSendNotification);
     scaffoldLabel.setJustificationType(juce::Justification::centred);
     scaffoldLabel.setColour(juce::Label::textColourId, juce::Colours::white);

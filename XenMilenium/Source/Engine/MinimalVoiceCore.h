@@ -1,6 +1,9 @@
 #pragma once
 
+#include "Engine/Modulation.h"
+
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -55,6 +58,9 @@ struct EngineControls
     std::array<PartControls, 8> parts {};
     float masterGain = 0.8f;
     float tempoBpm = 120.0f;
+    // Снимок слотов на блок: 8 партий по 32, партия за партией. Нулевой указатель значит нули.
+    const MatrixSlotControl* matrix = nullptr;
+    std::array<bool, modulationPartCount> matrixActive {};
 };
 
 // Этап 1.5: у каждой партии свой пул. Общего массива на 32 голоса нет.
@@ -62,6 +68,8 @@ struct EngineControls
 // Хвост кражи не занимает голос MIDI и не считается в этих восьми.
 // Этап 1.6 добавляет фильтр, огибающую фильтра и четыре LFO. При mix 0 и нулевых
 // глубинах модуляции сухой путь остаётся прежним.
+// Этап 1.7 добавляет четыре MSEG на голос и матрицу. Жёсткие маршруты не переносятся
+// в слоты: нулевой слот к ним ничего не прибавляет. MSEG голос не освобождает.
 class MinimalVoiceCore
 {
 public:
@@ -84,6 +92,9 @@ public:
     void noteOn(int partIndex, int channel, int noteNumber, float velocity, bool mono, bool legato, const std::array<bool, lfoCount>& lfoRetrig) noexcept;
     void noteOff(int partIndex, int channel, int noteNumber) noexcept;
     void setSustain(int partIndex, int channel, bool down) noexcept;
+    void setModWheel(int partIndex, int channel, float value) noexcept;
+    void publishMsegPoints(const juce::var& unknown);
+    void latchModulation(const int* modes) noexcept;
     float renderSample(const EngineControls& controls) noexcept;
     int activeVoiceCount() const noexcept;
     int activeVoiceCountForPart(int partIndex) const noexcept;
@@ -132,6 +143,13 @@ private:
         Stage stage = Stage::attack;
     };
 
+    struct MsegRuntime
+    {
+        double time = 0.0;
+        float output = 0.0f;
+        int activity = msegActivityHold;
+    };
+
     struct Voice
     {
         bool active = false;
@@ -150,6 +168,7 @@ private:
         float entryPosition = 0.0f;
         FilterMemory filter {};
         std::array<LfoRuntime, lfoCount> lfo {};
+        std::array<MsegRuntime, msegCount> mseg {};
     };
 
     struct Tail
@@ -158,6 +177,9 @@ private:
         int channel = 0;
         int note = -1;
         float level = 0.0f;
+        float ampEnvelope = 0.0f;
+        float velocity = 0.0f;
+        std::array<float, msegCount> msegOutput {};
         std::array<double, oscillatorCount> phase {};
         std::uint32_t noiseState = 1;
         float fadePosition = 0.0f;
@@ -172,6 +194,7 @@ private:
         std::array<Tail, tailsPerPart> tails {};
         bool enabled = false;
         std::array<bool, 16> sustainDown {};
+        std::array<float, 16> modWheel {};
         std::array<LfoRuntime, lfoCount> lfo {};
     };
 
@@ -180,7 +203,11 @@ private:
     Voice* stealWithin(PartPool& part) noexcept;
     void pushTail(PartPool& part, int partIndex, const Voice& voice) noexcept;
     void assign(Voice& voice, int partIndex, int channel, int noteNumber, float velocity, bool restartEnvelope, bool fresh, bool crossfade, const std::array<bool, lfoCount>& lfoRetrig) noexcept;
-    void beginRelease(Voice& voice) noexcept;
+    void beginRelease(Voice& voice, int partIndex) noexcept;
+    void restartMseg(Voice& voice, int partIndex) noexcept;
+    void releaseMseg(Voice& voice, int partIndex) noexcept;
+    void advanceMseg(Voice& voice, int partIndex) noexcept;
+    ModOffsets offsetsFor(int partIndex, bool tail, int channel, int noteNumber, float ampEnvelope, float filterEnvelope, float velocity, const std::array<float, msegCount>& msegOutputs, const std::array<float, lfoCount>& lfoValues, const EngineControls& controls) const noexcept;
     void releasePart(PartPool& part) noexcept;
     void freeVoice(Voice& voice) noexcept;
     void freeTail(Tail& tail) noexcept;
@@ -189,8 +216,8 @@ private:
     void beginFilterRelease(FilterMemory& filter) noexcept;
     void resetRetriggers(std::array<LfoRuntime, lfoCount>& lfo, int partIndex, int channel, int noteNumber, std::uint64_t age, const std::array<bool, lfoCount>& lfoRetrig) noexcept;
     void advanceSharedLfos(PartPool& pool, const PartControls& controls, float tempoBpm) noexcept;
-    float sourceSample(int partIndex, int slot, bool tail, int noteNumber, std::array<double, oscillatorCount>& phase, std::uint32_t& noiseState, FilterMemory& filter, const std::array<float, lfoCount>& lfoValues, const PartControls& controls, float smooth) noexcept;
-    float filtered(int partIndex, int slot, bool tail, FilterMemory& filter, float mixer, int noteNumber, float lfoCutoff, const PartControls& controls, float smooth) noexcept;
+    float sourceSample(int partIndex, int slot, bool tail, int noteNumber, std::array<double, oscillatorCount>& phase, std::uint32_t& noiseState, FilterMemory& filter, const std::array<float, lfoCount>& lfoValues, const PartControls& controls, const ModOffsets& offsets, float smooth) noexcept;
+    float filtered(int partIndex, int slot, bool tail, FilterMemory& filter, float mixer, int noteNumber, float lfoCutoff, const PartControls& controls, const ModOffsets& offsets, float smooth) noexcept;
     void clearComb(int partIndex, int slot, bool tail) noexcept;
     int combOffset(int partIndex, int slot, bool tail) const noexcept;
     int voiceIndex(const PartPool& part, const Voice& voice) const noexcept;
@@ -207,6 +234,10 @@ private:
 
     std::array<PartPool, partCount> pools {};
     std::vector<float> combBuffer;
+    MsegBank published {};
+    MsegBank latched {};
+    std::array<int, msegModuleCount> latchedModes {};
+    std::atomic<std::uint32_t> msegSequence { 0 };
     double sampleRate = 0.0;
     std::uint64_t nextAge = 1;
 };

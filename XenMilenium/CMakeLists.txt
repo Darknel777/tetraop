@@ -39,7 +39,7 @@ juce_add_plugin(XenMilenium
     PRODUCT_NAME "Xen Milenium"
     PLUGIN_NAME "Xen Milenium"
     VST3_CATEGORIES "Instrument Synth"
-    DESCRIPTION "Xen Milenium eight-part filter and LFO core")
+    DESCRIPTION "Xen Milenium eight-part MSEG and modulation matrix")
 
 juce_generate_juce_header(XenMilenium)
 
@@ -54,7 +54,9 @@ target_sources(XenMilenium
         Source/Parameters/StateDocument.h
         Source/Parameters/StateDocument.cpp
         Source/Engine/MinimalVoiceCore.h
-        Source/Engine/MinimalVoiceCore.cpp)
+        Source/Engine/MinimalVoiceCore.cpp
+        Source/Engine/Modulation.h
+        Source/Engine/Modulation.cpp)
 
 target_include_directories(XenMilenium PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
@@ -87,6 +89,7 @@ target_sources(XenMilenium_Smoke
         Tests/EightPartTests.cpp
         Tests/MixerAndPoolTests.cpp
         Tests/FilterLfoTests.cpp
+        Tests/MsegMatrixTests.cpp
         Source/PluginProcessor.h
         Source/PluginProcessor.cpp
         Source/PluginEditor.h
@@ -96,7 +99,9 @@ target_sources(XenMilenium_Smoke
         Source/Parameters/StateDocument.h
         Source/Parameters/StateDocument.cpp
         Source/Engine/MinimalVoiceCore.h
-        Source/Engine/MinimalVoiceCore.cpp)
+        Source/Engine/MinimalVoiceCore.cpp
+        Source/Engine/Modulation.h
+        Source/Engine/Modulation.cpp)
 
 target_include_directories(XenMilenium_Smoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 

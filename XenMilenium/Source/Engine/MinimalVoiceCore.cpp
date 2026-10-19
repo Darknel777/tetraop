@@ -77,6 +77,7 @@ void MinimalVoiceCore::reset() noexcept
             freeTail(tail);
         pool.enabled = false;
         pool.sustainDown = {};
+        pool.modWheel = {};
         pool.lfo = {};
     }
     std::fill(combBuffer.begin(), combBuffer.end(), 0.0f);
@@ -110,7 +111,7 @@ void MinimalVoiceCore::noteOn(int partIndex, int channel, int noteNumber, float 
         {
             for (auto& voice : pool.voices)
                 if (voice.active && &voice != existing)
-                    beginRelease(voice);
+                    beginRelease(voice, partIndex);
         }
         assign(*existing, partIndex, channel, noteNumber, level, ! legato, false, false, lfoRetrig);
         return;
@@ -124,7 +125,7 @@ void MinimalVoiceCore::noteOn(int partIndex, int channel, int noteNumber, float 
                 keeper = &voice;
         for (auto& voice : pool.voices)
             if (voice.active && &voice != keeper)
-                beginRelease(voice);
+                beginRelease(voice, partIndex);
         if (keeper != nullptr)
         {
             pushTail(pool, partIndex, *keeper);
@@ -168,7 +169,7 @@ void MinimalVoiceCore::noteOff(int partIndex, int channel, int noteNumber) noexc
         return;
     }
 
-    beginRelease(*voice);
+    beginRelease(*voice, partIndex);
 }
 
 void MinimalVoiceCore::setSustain(int partIndex, int channel, bool down) noexcept
@@ -183,7 +184,46 @@ void MinimalVoiceCore::setSustain(int partIndex, int channel, bool down) noexcep
 
     for (auto& voice : pool.voices)
         if (voice.active && voice.channel == channel && voice.waitingForPedal)
-            beginRelease(voice);
+            beginRelease(voice, partIndex);
+}
+
+void MinimalVoiceCore::setModWheel(int partIndex, int channel, float value) noexcept
+{
+    if (! validPart(partIndex) || ! validChannel(channel))
+        return;
+
+    pools[static_cast<std::size_t>(partIndex)].modWheel[static_cast<std::size_t>(channel - 1)] =
+        std::isfinite(value) ? juce::jlimit(0.0f, 1.0f, value) : 0.0f;
+}
+
+void MinimalVoiceCore::publishMsegPoints(const juce::var& unknown)
+{
+    const MsegBank next = parseMsegBank(unknown);
+    const auto sequence = msegSequence.load(std::memory_order_relaxed);
+    msegSequence.store(sequence + 1, std::memory_order_release);
+    published = next;
+    msegSequence.store(sequence + 2, std::memory_order_release);
+}
+
+void MinimalVoiceCore::latchModulation(const int* modes) noexcept
+{
+    if (modes != nullptr)
+    {
+        for (int index = 0; index < msegModuleCount; ++index)
+            latchedModes[static_cast<std::size_t>(index)] = juce::jlimit(0, 2, modes[index]);
+    }
+
+    for (;;)
+    {
+        const auto sequence = msegSequence.load(std::memory_order_acquire);
+        if ((sequence & 1u) != 0u)
+            continue;
+
+        latched = published;
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (msegSequence.load(std::memory_order_acquire) == sequence)
+            break;
+    }
 }
 
 float MinimalVoiceCore::renderSample(const EngineControls& controls) noexcept
@@ -219,7 +259,11 @@ float MinimalVoiceCore::renderSample(const EngineControls& controls) noexcept
                 lfoValues[static_cast<std::size_t>(index)] = lfoPolarity(lfoBipolar(spec.shape, runtime.phase, runtime.held), spec.unipolar);
             }
 
-            float dry = sourceSample(partIndex, slot, false, voice.note, voice.phase, voice.noiseState, voice.filter, lfoValues, part, smooth);
+            std::array<float, msegCount> msegOutputs {};
+            for (int index = 0; index < msegCount; ++index)
+                msegOutputs[static_cast<std::size_t>(index)] = voice.mseg[static_cast<std::size_t>(index)].output;
+            const auto offsets = offsetsFor(partIndex, false, voice.channel, voice.note, voice.envelope, voice.filter.envelope, voice.velocity, msegOutputs, lfoValues, controls);
+            float dry = sourceSample(partIndex, slot, false, voice.note, voice.phase, voice.noiseState, voice.filter, lfoValues, part, offsets, smooth);
             if (voice.entryFading)
             {
                 dry *= 1.0f - hannDown(voice.entryPosition);
@@ -230,7 +274,10 @@ float MinimalVoiceCore::renderSample(const EngineControls& controls) noexcept
 
             sum += static_cast<double>(dry) * voice.envelope * voice.velocity;
             advanceAmp(voice, part);
+            if (! voice.active)
+                continue;
             advanceFilterEnvelope(voice.filter, part);
+            advanceMseg(voice, partIndex);
         }
 
         for (int slot = 0; slot < tailsPerPart; ++slot)
@@ -249,7 +296,8 @@ float MinimalVoiceCore::renderSample(const EngineControls& controls) noexcept
                 lfoValues[static_cast<std::size_t>(index)] = lfoPolarity(lfoBipolar(spec.shape, runtime.phase, runtime.held), spec.unipolar);
             }
 
-            const float dry = sourceSample(partIndex, slot, true, tail.note, tail.phase, tail.noiseState, tail.filter, lfoValues, part, smooth);
+            const auto offsets = offsetsFor(partIndex, true, tail.channel, tail.note, tail.ampEnvelope, tail.filter.envelope, tail.velocity, tail.msegOutput, lfoValues, controls);
+            const float dry = sourceSample(partIndex, slot, true, tail.note, tail.phase, tail.noiseState, tail.filter, lfoValues, part, offsets, smooth);
             sum += static_cast<double>(dry) * tail.level * hannDown(tail.fadePosition);
             tail.fadePosition += fadeStep;
             if (tail.fadePosition >= 1.0f)
@@ -373,6 +421,10 @@ void MinimalVoiceCore::pushTail(PartPool& part, int partIndex, const Voice& voic
     slot->channel = voice.channel;
     slot->note = voice.note;
     slot->level = voice.envelope * voice.velocity;
+    slot->ampEnvelope = voice.envelope;
+    slot->velocity = voice.velocity;
+    for (int index = 0; index < msegCount; ++index)
+        slot->msegOutput[static_cast<std::size_t>(index)] = voice.mseg[static_cast<std::size_t>(index)].output;
     slot->phase = voice.phase;
     slot->noiseState = voice.noiseState;
     slot->fadePosition = 0.0f;
@@ -412,6 +464,7 @@ void MinimalVoiceCore::assign(Voice& voice, int partIndex, int channel, int note
         voice.lfo = {};
         clearComb(partIndex, slot, false);
         resetRetriggers(voice.lfo, partIndex, channel, noteNumber, voice.age, lfoRetrig);
+        restartMseg(voice, partIndex);
         return;
     }
 
@@ -434,6 +487,7 @@ void MinimalVoiceCore::assign(Voice& voice, int partIndex, int channel, int note
         voice.filter.stage = filterStage;
         clearComb(partIndex, slot, false);
         resetRetriggers(voice.lfo, partIndex, channel, noteNumber, voice.age, lfoRetrig);
+        restartMseg(voice, partIndex);
         return;
     }
 
@@ -451,15 +505,17 @@ void MinimalVoiceCore::assign(Voice& voice, int partIndex, int channel, int note
             voice.filter.stage = Stage::hold;
     }
     resetRetriggers(voice.lfo, partIndex, channel, noteNumber, voice.age, lfoRetrig);
+    restartMseg(voice, partIndex);
 }
 
-void MinimalVoiceCore::beginRelease(Voice& voice) noexcept
+void MinimalVoiceCore::beginRelease(Voice& voice, int partIndex) noexcept
 {
     if (! voice.active || voice.stage == Stage::release)
         return;
 
     voice.waitingForPedal = false;
     beginFilterRelease(voice.filter);
+    releaseMseg(voice, partIndex);
     if (voice.envelope <= silenceThreshold)
     {
         freeVoice(voice);
@@ -474,7 +530,7 @@ void MinimalVoiceCore::releasePart(PartPool& part) noexcept
 {
     for (auto& voice : part.voices)
         if (voice.active)
-            beginRelease(voice);
+            beginRelease(voice, static_cast<int>(&part - pools.data()));
 }
 
 void MinimalVoiceCore::freeVoice(Voice& voice) noexcept
@@ -553,11 +609,121 @@ void MinimalVoiceCore::advanceAmp(Voice& voice, const PartControls& controls) no
     }
 }
 
-float MinimalVoiceCore::sourceSample(int partIndex, int slot, bool tail, int noteNumber, std::array<double, oscillatorCount>& phase, std::uint32_t& noiseState, FilterMemory& filter, const std::array<float, lfoCount>& lfoValues, const PartControls& controls, float smooth) noexcept
+void MinimalVoiceCore::restartMseg(Voice& voice, int partIndex) noexcept
+{
+    for (int index = 0; index < msegCount; ++index)
+    {
+        const int bank = partIndex * msegCount + index;
+        auto& runtime = voice.mseg[static_cast<std::size_t>(index)];
+        runtime.time = 0.0;
+        if (latchedModes[static_cast<std::size_t>(bank)] == msegModeNoteOff)
+        {
+            runtime.activity = msegActivityWait;
+            runtime.output = 0.0f;
+            continue;
+        }
+
+        runtime.activity = msegActivityPlay;
+        runtime.output = evaluateMseg(latched.shapes[static_cast<std::size_t>(bank)], 0.0).value;
+        if (! std::isfinite(runtime.output))
+            runtime.output = 0.0f;
+    }
+}
+
+void MinimalVoiceCore::releaseMseg(Voice& voice, int partIndex) noexcept
+{
+    for (int index = 0; index < msegCount; ++index)
+    {
+        const int bank = partIndex * msegCount + index;
+        auto& runtime = voice.mseg[static_cast<std::size_t>(index)];
+        const int mode = latchedModes[static_cast<std::size_t>(bank)];
+        if (mode == msegModeNoteOff)
+        {
+            runtime.time = 0.0;
+            runtime.activity = msegActivityPlay;
+            runtime.output = evaluateMseg(latched.shapes[static_cast<std::size_t>(bank)], 0.0).value;
+        }
+        else if (mode == msegModeLoop)
+        {
+            runtime.activity = msegActivityHold;
+        }
+
+        if (! std::isfinite(runtime.output))
+            runtime.output = 0.0f;
+    }
+}
+
+void MinimalVoiceCore::advanceMseg(Voice& voice, int partIndex) noexcept
+{
+    if (! (sampleRate > 0.0))
+        return;
+
+    const double step = 1.0 / sampleRate;
+    for (int index = 0; index < msegCount; ++index)
+    {
+        auto& runtime = voice.mseg[static_cast<std::size_t>(index)];
+        if (runtime.activity != msegActivityPlay)
+            continue;
+
+        const int bank = partIndex * msegCount + index;
+        const auto& shape = latched.shapes[static_cast<std::size_t>(bank)];
+        const int mode = latchedModes[static_cast<std::size_t>(bank)];
+        if (mode == msegModeLoop)
+        {
+            const double total = msegDuration(shape);
+            if (! (total > 1.0e-8))
+            {
+                runtime.output = evaluateMseg(shape, 0.0).value;
+                runtime.activity = msegActivityHold;
+            }
+            else
+            {
+                runtime.time += step;
+                runtime.time = std::fmod(runtime.time, total);
+                if (! std::isfinite(runtime.time) || runtime.time < 0.0)
+                    runtime.time = 0.0;
+                runtime.output = evaluateMseg(shape, runtime.time).value;
+            }
+        }
+        else
+        {
+            runtime.time += step;
+            const auto cursor = evaluateMseg(shape, runtime.time);
+            runtime.output = cursor.value;
+            if (cursor.finished)
+                runtime.activity = msegActivityHold;
+        }
+
+        if (! std::isfinite(runtime.output))
+            runtime.output = 0.0f;
+    }
+}
+
+ModOffsets MinimalVoiceCore::offsetsFor(int partIndex, bool tail, int channel, int noteNumber, float ampEnvelope, float filterEnvelope, float velocity, const std::array<float, msegCount>& msegOutputs, const std::array<float, lfoCount>& lfoValues, const EngineControls& controls) const noexcept
+{
+    juce::ignoreUnused(tail);
+    if (controls.matrix == nullptr || ! controls.matrixActive[static_cast<std::size_t>(partIndex)])
+        return {};
+
+    ModSourceValues sources;
+    sources.ampEnv = std::isfinite(ampEnvelope) ? juce::jlimit(0.0f, 1.0f, ampEnvelope) : 0.0f;
+    sources.filterEnv = std::isfinite(filterEnvelope) ? juce::jlimit(0.0f, 1.0f, filterEnvelope) : 0.0f;
+    sources.lfo = lfoValues;
+    sources.mseg = msegOutputs;
+    sources.velocity = std::isfinite(velocity) ? juce::jlimit(0.0f, 1.0f, velocity) : 0.0f;
+    sources.noteKey = noteKeyValue(noteNumber);
+    if (validChannel(channel))
+        sources.modWheel = pools[static_cast<std::size_t>(partIndex)].modWheel[static_cast<std::size_t>(channel - 1)];
+    return sumMatrix(controls.matrix + partIndex * matrixSlotsPerPart, matrixSlotsPerPart, sources);
+}
+
+float MinimalVoiceCore::sourceSample(int partIndex, int slot, bool tail, int noteNumber, std::array<double, oscillatorCount>& phase, std::uint32_t& noiseState, FilterMemory& filter, const std::array<float, lfoCount>& lfoValues, const PartControls& controls, const ModOffsets& offsets, float smooth) noexcept
 {
     float pitch = 0.0f;
-    const float targetPitch = lfoValues[1] * controls.lfo2ToPitchSemitones;
-    if (std::abs(controls.lfo2ToPitchSemitones) > 0.0f || std::abs(filter.pitchSemitones) > 0.0f)
+    float targetPitch = lfoValues[1] * controls.lfo2ToPitchSemitones;
+    if (std::abs(offsets.pitchSemitones) > 0.0f)
+        targetPitch += offsets.pitchSemitones;
+    if (std::abs(controls.lfo2ToPitchSemitones) > 0.0f || std::abs(offsets.pitchSemitones) > 0.0f || std::abs(filter.pitchSemitones) > 0.0f)
     {
         if (! filter.pitchReady)
         {
@@ -571,6 +737,16 @@ float MinimalVoiceCore::sourceSample(int partIndex, int slot, bool tail, int not
         pitch = filter.pitchSemitones;
     }
 
+    const float waveOffset[oscillatorCount] = { offsets.wave1, offsets.wave2, offsets.wave3 };
+    int waveIndex[oscillatorCount];
+    for (int index = 0; index < oscillatorCount; ++index)
+    {
+        const int baseWave = controls.wave[static_cast<std::size_t>(index)];
+        waveIndex[index] = baseWave;
+        if (std::abs(waveOffset[index]) > 0.0f)
+            waveIndex[index] = juce::jlimit(0, 3, baseWave + static_cast<int>(std::lround(waveOffset[index])));
+    }
+
     float oscillator[oscillatorCount];
     double increment = static_cast<double>(equalTemperamentFrequency(noteNumber)) / sampleRate;
     if (std::abs(pitch) > 0.0f)
@@ -578,25 +754,38 @@ float MinimalVoiceCore::sourceSample(int partIndex, int slot, bool tail, int not
     for (int index = 0; index < oscillatorCount; ++index)
     {
         const double cycle = phase[static_cast<std::size_t>(index)] - std::floor(phase[static_cast<std::size_t>(index)]);
-        oscillator[index] = waveform(controls.wave[static_cast<std::size_t>(index)], cycle);
+        oscillator[index] = waveform(waveIndex[index], cycle);
         phase[static_cast<std::size_t>(index)] += increment;
         if (phase[static_cast<std::size_t>(index)] >= 1.0)
             phase[static_cast<std::size_t>(index)] -= std::floor(phase[static_cast<std::size_t>(index)]);
     }
 
+    const auto modulatedLevel = [](float base, float offset) noexcept
+    {
+        const float value = std::abs(offset) > 0.0f ? base + offset : base;
+        if (! std::isfinite(value))
+            return 0.0f;
+        return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+    };
+
     const float noise = nextNoise(noiseState);
     const float osc1 = oscillator[0];
     const float osc2 = oscillator[1];
-    const float mixer = osc1 * unitLevel(controls.osc1Level)
-                      + osc2 * unitLevel(controls.osc2Level)
-                      + (osc1 * osc2) * unitLevel(controls.ringLevel)
-                      + noise * unitLevel(controls.noiseLevel);
-    const float direct = oscillator[2] * unitLevel(controls.directOut);
-    const float mix = unitLevel(controls.filterMix);
+    const float mixer = osc1 * modulatedLevel(controls.osc1Level, offsets.osc1)
+                      + osc2 * modulatedLevel(controls.osc2Level, offsets.osc2)
+                      + (osc1 * osc2) * modulatedLevel(controls.ringLevel, offsets.ring)
+                      + noise * modulatedLevel(controls.noiseLevel, offsets.noise);
+    const float direct = oscillator[2] * modulatedLevel(controls.directOut, offsets.directOut);
+    float mix = unitLevel(controls.filterMix);
+    if (std::abs(offsets.mix) > 0.0f)
+    {
+        const float shifted = controls.filterMix + offsets.mix;
+        mix = std::isfinite(shifted) ? unitLevel(shifted) : mix;
+    }
     if (! (mix > 0.0f))
         return mixer + direct;
 
-    const float wet = filtered(partIndex, slot, tail, filter, mixer, noteNumber, lfoValues[0], controls, smooth);
+    const float wet = filtered(partIndex, slot, tail, filter, mixer, noteNumber, lfoValues[0], controls, offsets, smooth);
     return mixer * (1.0f - mix) + wet * mix + direct;
 }
 
@@ -747,13 +936,15 @@ void MinimalVoiceCore::advanceSharedLfos(PartPool& pool, const PartControls& con
     }
 }
 
-float MinimalVoiceCore::filtered(int partIndex, int slot, bool tail, FilterMemory& filter, float mixer, int noteNumber, float lfoCutoff, const PartControls& controls, float smooth) noexcept
+float MinimalVoiceCore::filtered(int partIndex, int slot, bool tail, FilterMemory& filter, float mixer, int noteNumber, float lfoCutoff, const PartControls& controls, const ModOffsets& offsets, float smooth) noexcept
 {
     const float env = juce::jlimit(0.0f, 1.0f, filter.envelope);
     const float key = std::isfinite(controls.keytrack) ? juce::jlimit(-1.0f, 1.0f, controls.keytrack) : 0.0f;
     const float amount = std::isfinite(controls.filterAmountSemitones) ? controls.filterAmountSemitones : 0.0f;
     const float lfoAmount = std::isfinite(controls.lfo1ToCutoffSemitones) ? controls.lfo1ToCutoffSemitones : 0.0f;
-    const float semis = key * static_cast<float>(noteNumber - 60) + env * amount + lfoCutoff * lfoAmount;
+    float semis = key * static_cast<float>(noteNumber - 60) + env * amount + lfoCutoff * lfoAmount;
+    if (std::abs(offsets.cutoffSemitones) > 0.0f)
+        semis += offsets.cutoffSemitones;
     const float base = std::isfinite(controls.cutoffHz) ? controls.cutoffHz : 2000.0f;
     const float ceiling = std::min(20000.0f, static_cast<float>(0.45 * sampleRate));
     float cutoff = base * std::exp2(semis / 12.0f);
@@ -776,12 +967,19 @@ float MinimalVoiceCore::filtered(int partIndex, int slot, bool tail, FilterMemor
         fc = 20.0f;
     fc = juce::jlimit(20.0f, ceiling, fc);
 
+    float drive = controls.drive;
+    if (std::abs(offsets.drive) > 0.0f)
+        drive += offsets.drive;
+    drive = std::isfinite(drive) ? juce::jlimit(0.0f, 1.0f, drive) : 0.0f;
     float driven = mixer;
-    if (controls.drive > 1.0e-6f)
-        driven = std::tanh(mixer * (1.0f + 4.0f * juce::jlimit(0.0f, 1.0f, controls.drive)));
+    if (drive > 1.0e-6f)
+        driven = std::tanh(mixer * (1.0f + 4.0f * drive));
 
     const int type = juce::jlimit(0, filterTypeCount - 1, controls.filterType);
-    const float resonance = std::isfinite(controls.resonance) ? juce::jlimit(0.0f, 1.0f, controls.resonance) : 0.0f;
+    float resonance = std::isfinite(controls.resonance) ? controls.resonance : 0.0f;
+    if (std::abs(offsets.resonance) > 0.0f)
+        resonance += offsets.resonance;
+    resonance = std::isfinite(resonance) ? juce::jlimit(0.0f, 1.0f, resonance) : 0.0f;
     constexpr float q0 = 0.70710678118f;
     constexpr float q1 = 18.0f;
     const float q = q0 * std::exp(resonance * std::log(q1 / q0));

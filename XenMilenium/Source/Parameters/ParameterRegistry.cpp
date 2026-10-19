@@ -100,6 +100,24 @@ juce::StringArray lfoSyncChoices()
     return { "16/1", "8/1", "4/1", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" };
 }
 
+juce::StringArray msegModeChoices()
+{
+    return { "noteOn", "noteOff", "loop" };
+}
+
+juce::StringArray matrixSourceChoices()
+{
+    return { "off", "ampEnv", "filterEnv", "lfo1", "lfo2", "lfo3", "lfo4",
+             "mseg1", "mseg2", "mseg3", "mseg4", "noteVelocity", "noteKey", "modWheel" };
+}
+
+juce::StringArray matrixDestinationChoices()
+{
+    return { "off", "pitch", "filter/cutoff", "filter/resonance", "filter/drive", "filter/mix",
+             "mixer/osc1", "mixer/osc2", "mixer/ring", "mixer/noise", "osc/3/directOut",
+             "osc/1/waveSource", "osc/2/waveSource", "osc/3/waveSource" };
+}
+
 ParameterSpec floatSpec(juce::String apvtsId,
                         juce::String statePath,
                         juce::String displayName,
@@ -127,7 +145,7 @@ ParameterSpec floatSpec(juce::String apvtsId,
 std::vector<ParameterSpec> buildSpecs()
 {
     std::vector<ParameterSpec> specs;
-    specs.reserve(513);
+    specs.reserve(1569);
 
     const auto midiChoices = midiChannelChoices();
     const auto modifiers = modifierChoices();
@@ -136,6 +154,9 @@ std::vector<ParameterSpec> buildSpecs()
     const auto lfoShapes = lfoShapeChoices();
     const auto lfoPolarity = lfoPolarityChoices();
     const auto lfoSync = lfoSyncChoices();
+    const auto msegModes = msegModeChoices();
+    const auto matrixSources = matrixSourceChoices();
+    const auto matrixDestinations = matrixDestinationChoices();
 
     for (int part = 1; part <= 8; ++part)
     {
@@ -439,6 +460,50 @@ std::vector<ParameterSpec> buildSpecs()
                                   12.0f,
                                   0.0f,
                                   "st"));
+
+        for (int mseg = 1; mseg <= 4; ++mseg)
+        {
+            const juce::String suffix = "m" + juce::String(mseg) + ".mode";
+            const juce::String path = "mseg/" + juce::String(mseg) + "/mode";
+            specs.push_back(choiceSpec(partId(part, suffix.toRawUTF8()),
+                                       partPath(part, path.toRawUTF8()),
+                                       partLabel(part, ("MSEG " + juce::String(mseg) + " Mode").toRawUTF8()),
+                                       ParameterScope::part,
+                                       msegModes,
+                                       0));
+        }
+
+        for (int slot = 1; slot <= 32; ++slot)
+        {
+            const juce::String idBase = "s" + juce::String(slot) + ".";
+            const juce::String pathBase = "matrix/slot/" + juce::String(slot) + "/";
+            const juce::String label = "Slot " + juce::String(slot) + " ";
+            specs.push_back(choiceSpec(partId(part, (idBase + "src").toRawUTF8()),
+                                       partPath(part, (pathBase + "source").toRawUTF8()),
+                                       partLabel(part, (label + "Source").toRawUTF8()),
+                                       ParameterScope::part,
+                                       matrixSources,
+                                       0));
+            specs.push_back(choiceSpec(partId(part, (idBase + "dst").toRawUTF8()),
+                                       partPath(part, (pathBase + "destination").toRawUTF8()),
+                                       partLabel(part, (label + "Destination").toRawUTF8()),
+                                       ParameterScope::part,
+                                       matrixDestinations,
+                                       0));
+            specs.push_back(floatSpec(partId(part, (idBase + "amt").toRawUTF8()),
+                                     partPath(part, (pathBase + "amount").toRawUTF8()),
+                                     partLabel(part, (label + "Amount").toRawUTF8()),
+                                     ParameterScope::part,
+                                     -1.0f,
+                                     1.0f,
+                                     0.0f,
+                                     "linear"));
+            specs.push_back(booleanSpec(partId(part, (idBase + "on").toRawUTF8()),
+                                        partPath(part, (pathBase + "enable").toRawUTF8()),
+                                        partLabel(part, (label + "Enable").toRawUTF8()),
+                                        ParameterScope::part,
+                                        false));
+        }
     }
 
     specs.push_back(floatSpec("xm.master.volume",

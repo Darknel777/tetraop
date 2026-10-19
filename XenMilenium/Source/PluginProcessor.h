@@ -97,11 +97,20 @@ private:
         std::array<LfoSlots, xenmilenium::MinimalVoiceCore::lfoCount> lfo {};
     };
 
+    struct MatrixParams
+    {
+        juce::AudioParameterChoice* source = nullptr;
+        juce::AudioParameterChoice* destination = nullptr;
+        juce::AudioParameterFloat* amount = nullptr;
+        juce::AudioParameterBool* enabled = nullptr;
+    };
+
     void handleMidi(const juce::MidiBuffer& midi);
     void syncPartEnables() noexcept;
     void applyMidiToCore(const juce::MidiMessage& message) noexcept;
     void renderRange(juce::AudioBuffer<float>& buffer, int startSample, int endSample) noexcept;
     void updateTempo() noexcept;
+    void cacheMatrixAndModes() noexcept;
     xenmilenium::EngineControls readControls() const noexcept;
     static bool partAcceptsChannel(const xenmilenium::PartControls& part, int channel) noexcept;
 
@@ -110,6 +119,11 @@ private:
     xenmilenium::MinimalVoiceCore voiceCore;
     juce::AudioParameterFloat* masterVolume = nullptr;
     std::array<PartSlots, xenmilenium::MinimalVoiceCore::partCount> partSlots {};
+    std::array<juce::AudioParameterChoice*, xenmilenium::msegModuleCount> msegModeParams {};
+    std::array<MatrixParams, xenmilenium::modulationSlotCount> matrixParams {};
+    std::array<xenmilenium::MatrixSlotControl, xenmilenium::modulationSlotCount> matrixCache {};
+    std::array<int, xenmilenium::msegModuleCount> modeCache {};
+    std::array<bool, xenmilenium::modulationPartCount> matrixActiveCache {};
     std::atomic<int> lastNoteNumber { -1 };
     std::atomic<int> noteOnCount { 0 };
     double currentSampleRate = 0.0;

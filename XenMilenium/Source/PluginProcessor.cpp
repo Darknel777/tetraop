@@ -76,7 +76,30 @@ XenMileniumAudioProcessor::XenMileniumAudioProcessor()
             destination.rateSync = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(lfoId("rateSync")));
             destination.freeVariation = floatSlot(apvts, lfoId("freeVar").toRawUTF8());
         }
+
+        for (int mseg = 1; mseg <= xenmilenium::msegCount; ++mseg)
+        {
+            const int index = (part - 1) * xenmilenium::msegCount + (mseg - 1);
+            const auto modeId = "xm.p" + juce::String(part) + ".m" + juce::String(mseg) + ".mode";
+            msegModeParams[static_cast<std::size_t>(index)] = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(modeId));
+        }
+
+        for (int slotIndex = 1; slotIndex <= xenmilenium::matrixSlotsPerPart; ++slotIndex)
+        {
+            const int index = (part - 1) * xenmilenium::matrixSlotsPerPart + (slotIndex - 1);
+            const auto slotId = [part, slotIndex](const char* suffix)
+            {
+                return "xm.p" + juce::String(part) + ".s" + juce::String(slotIndex) + "." + suffix;
+            };
+            auto& matrix = matrixParams[static_cast<std::size_t>(index)];
+            matrix.source = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(slotId("src")));
+            matrix.destination = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(slotId("dst")));
+            matrix.amount = floatSlot(apvts, slotId("amt").toRawUTF8());
+            matrix.enabled = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(slotId("on")));
+        }
     }
+
+    voiceCore.publishMsegPoints(document->unknown);
 }
 
 XenMileniumAudioProcessor::~XenMileniumAudioProcessor() = default;
@@ -111,6 +134,7 @@ void XenMileniumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     const int numSamples = buffer.getNumSamples();
     if (numSamples > 0 && currentSampleRate > 0.0)
     {
+        cacheMatrixAndModes();
         syncPartEnables();
         updateTempo();
 
@@ -172,6 +196,7 @@ void XenMileniumAudioProcessor::applyMidiToCore(const juce::MidiMessage& message
     const auto controls = readControls();
     const int channel = message.getChannel();
     const bool sustain = message.isController() && message.getControllerNumber() == 64;
+    const bool modWheel = message.isController() && message.getControllerNumber() == 1;
     const bool pedalDown = sustain && message.getControllerValue() >= 64;
 
     for (int part = 0; part < xenmilenium::MinimalVoiceCore::partCount; ++part)
@@ -182,6 +207,8 @@ void XenMileniumAudioProcessor::applyMidiToCore(const juce::MidiMessage& message
 
         if (sustain)
             voiceCore.setSustain(part, channel, pedalDown);
+        else if (modWheel)
+            voiceCore.setModWheel(part, channel, static_cast<float>(message.getControllerValue()) / 127.0f);
         else if (message.isNoteOn())
         {
             std::array<bool, xenmilenium::MinimalVoiceCore::lfoCount> retrig {};
@@ -221,9 +248,40 @@ void XenMileniumAudioProcessor::updateTempo() noexcept
     }
 }
 
+void XenMileniumAudioProcessor::cacheMatrixAndModes() noexcept
+{
+    for (int index = 0; index < xenmilenium::msegModuleCount; ++index)
+    {
+        const auto* mode = msegModeParams[static_cast<std::size_t>(index)];
+        modeCache[static_cast<std::size_t>(index)] = mode != nullptr ? mode->getIndex() : 0;
+    }
+
+    for (int part = 0; part < xenmilenium::modulationPartCount; ++part)
+    {
+        bool active = false;
+        for (int slot = 0; slot < xenmilenium::matrixSlotsPerPart; ++slot)
+        {
+            const int index = part * xenmilenium::matrixSlotsPerPart + slot;
+            const auto& parameter = matrixParams[static_cast<std::size_t>(index)];
+            auto& cached = matrixCache[static_cast<std::size_t>(index)];
+            cached.source = parameter.source != nullptr ? parameter.source->getIndex() : 0;
+            cached.destination = parameter.destination != nullptr ? parameter.destination->getIndex() : 0;
+            cached.amount = finiteOr(parameter.amount != nullptr ? parameter.amount->get() : 0.0f, 0.0f);
+            cached.enabled = parameter.enabled != nullptr && parameter.enabled->get();
+            if (cached.enabled && std::abs(cached.amount) > 0.0f && cached.source != 0 && cached.destination != 0)
+                active = true;
+        }
+        matrixActiveCache[static_cast<std::size_t>(part)] = active;
+    }
+
+    voiceCore.latchModulation(modeCache.data());
+}
+
 xenmilenium::EngineControls XenMileniumAudioProcessor::readControls() const noexcept
 {
     xenmilenium::EngineControls controls;
+    controls.matrix = matrixCache.data();
+    controls.matrixActive = matrixActiveCache;
     controls.masterGain = finiteOr(masterVolume != nullptr ? masterVolume->get() : 0.8f, 0.8f);
     controls.tempoBpm = std::isfinite(currentTempoBpm) && currentTempoBpm > 0.0f ? currentTempoBpm : 120.0f;
 
@@ -371,7 +429,11 @@ juce::String XenMileniumAudioProcessor::saveStateDocument() const
 
 bool XenMileniumAudioProcessor::restoreStateDocument(const juce::String& documentText)
 {
-    return xenmilenium::deserialiseDocument(documentText, apvts, *document);
+    if (! xenmilenium::deserialiseDocument(documentText, apvts, *document))
+        return false;
+
+    voiceCore.publishMsegPoints(document->unknown);
+    return true;
 }
 
 int XenMileniumAudioProcessor::getLastNoteNumber() const noexcept
