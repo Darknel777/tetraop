@@ -14,7 +14,7 @@
   ],
   "openQuestions": [
     "AD-01..AD-17: рекомендации Proposed или Deferred, см. ARCHITECTURE_DECISIONS.md.",
-    "Контракт ядра этапа 1.3 задаёт master/volume, part/1/osc/1/waveSource и Amp партии 1. Громкость партии, cutoff, resonance, drive, detune, stereo, pan, directOut, уровни микшера, env/amp/level и огибающие партий 2–8 по-прежнему без продуктовых границ.",
+    "Контракт ядра задаёт master/volume и у каждой партии osc/1/waveSource плюс Amp. Это не закон инструмента. Громкость партии, cutoff, resonance, drive, detune, stereo, pan, directOut, уровни микшера и env/amp/level по-прежнему без продуктовых границ.",
     "Модель Formant, время Comb и формат кадров wavetable не заданы.",
     "Число полос Multiband не подтверждено. Объекта полос в примере нет.",
     "Внутренняя структура params для девяти типов FX не подтверждена."
