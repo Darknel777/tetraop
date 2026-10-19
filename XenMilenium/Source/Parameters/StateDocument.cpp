@@ -52,11 +52,34 @@ const juce::AudioParameterChoice* choiceParameter(const juce::AudioProcessorValu
     return dynamic_cast<const juce::AudioParameterChoice*>(state.getParameter(spec.apvtsId));
 }
 
+const juce::AudioParameterFloat* floatParameter(const juce::AudioProcessorValueTreeState& state, const ParameterSpec& spec)
+{
+    return dynamic_cast<const juce::AudioParameterFloat*>(state.getParameter(spec.apvtsId));
+}
+
+bool isPlainNumber(const juce::var& plain)
+{
+    return ! plain.isBool() && (plain.isDouble() || plain.isInt() || plain.isInt64());
+}
+
+float clampedFloat(const ParameterSpec& spec, const juce::var& plain)
+{
+    const float value = static_cast<float>(static_cast<double>(plain));
+    return juce::jlimit(spec.minimum, spec.maximum, value);
+}
+
 juce::var plainValue(const juce::AudioProcessorValueTreeState& state, const ParameterSpec& spec)
 {
     if (spec.kind == ParameterKind::boolean)
     {
         const auto* parameter = boolParameter(state, spec);
+        jassert(parameter != nullptr);
+        return parameter->get();
+    }
+
+    if (spec.kind == ParameterKind::floatValue)
+    {
+        const auto* parameter = floatParameter(state, spec);
         jassert(parameter != nullptr);
         return parameter->get();
     }
@@ -74,6 +97,12 @@ float normalisedFor(const juce::AudioProcessorValueTreeState& state, const Param
         return parameter->convertTo0to1(static_cast<bool>(plain) ? 1.0f : 0.0f);
     }
 
+    if (spec.kind == ParameterKind::floatValue)
+    {
+        const auto* parameter = floatParameter(state, spec);
+        return parameter->convertTo0to1(clampedFloat(spec, plain));
+    }
+
     const auto* parameter = choiceParameter(state, spec);
     const int index = ParameterRegistry::indexOfChoice(spec, plain.toString());
     return parameter->convertTo0to1(static_cast<float>(index));
@@ -86,6 +115,9 @@ bool plainIsValid(const ParameterSpec& spec, const juce::var& plain)
 
     if (spec.kind == ParameterKind::boolean)
         return plain.isBool();
+
+    if (spec.kind == ParameterKind::floatValue)
+        return isPlainNumber(plain);
 
     return plain.isString() && ParameterRegistry::indexOfChoice(spec, plain.toString()) >= 0;
 }

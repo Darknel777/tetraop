@@ -11,11 +11,13 @@ namespace xenmilenium
 enum class ParameterKind
 {
     boolean,
-    choice
+    choice,
+    floatValue
 };
 
 enum class ParameterScope
 {
+    global,
     part,
     oscillator,
     effect
@@ -31,6 +33,10 @@ struct ParameterSpec
     bool defaultBool = false;
     juce::StringArray choices;
     int defaultChoice = 0;
+    float minimum = 0.0f;
+    float maximum = 1.0f;
+    float defaultFloat = 0.0f;
+    juce::String unit;
 };
 
 class ParameterRegistry

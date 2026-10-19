@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Engine/MinimalVoiceCore.h"
 #include "Parameters/StateDocument.h"
 
 #include <JuceHeader.h>
@@ -42,6 +43,7 @@ public:
 
     int getLastNoteNumber() const noexcept;
     int getNoteOnCount() const noexcept;
+    int getActiveVoiceCount() const noexcept;
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept;
     const juce::AudioProcessorValueTreeState& getValueTreeState() const noexcept;
@@ -50,9 +52,20 @@ public:
 
 private:
     void handleMidi(const juce::MidiBuffer& midi);
+    void applyMidiToCore(const juce::MidiMessage& message) noexcept;
+    void renderRange(juce::AudioBuffer<float>& buffer, int startSample, int endSample) noexcept;
+    xenmilenium::AmplitudeControls readControls() const noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
     std::unique_ptr<xenmilenium::StoredDocument> document;
+    xenmilenium::MinimalVoiceCore voiceCore;
+    juce::AudioParameterFloat* masterVolume = nullptr;
+    juce::AudioParameterChoice* waveSource = nullptr;
+    juce::AudioParameterFloat* ampAttack = nullptr;
+    juce::AudioParameterFloat* ampDecay = nullptr;
+    juce::AudioParameterFloat* ampSustain = nullptr;
+    juce::AudioParameterFloat* ampRelease = nullptr;
+    juce::AudioParameterBool* partOneEnabled = nullptr;
     std::atomic<int> lastNoteNumber { -1 };
     std::atomic<int> noteOnCount { 0 };
     double currentSampleRate = 0.0;

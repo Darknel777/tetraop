@@ -11,7 +11,7 @@ XenMileniumAudioProcessorEditor::XenMileniumAudioProcessorEditor(XenMileniumAudi
     addAndMakeVisible(titleLabel);
 
     scaffoldLabel.setText(juce::String::fromUTF8(
-                              "Параметры и сохранение состояния. Звуковой движок не реализован."),
+                              "Минимальное ядро: партия 1, один осциллятор, огибающая.\nПолный синтезатор не сделан."),
                           juce::dontSendNotification);
     scaffoldLabel.setJustificationType(juce::Justification::centred);
     scaffoldLabel.setColour(juce::Label::textColourId, juce::Colours::white);

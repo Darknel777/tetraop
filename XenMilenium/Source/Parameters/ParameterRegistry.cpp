@@ -74,10 +74,37 @@ juce::StringArray positionChoices()
     return { "pre", "post" };
 }
 
+juce::StringArray basicWaveChoices()
+{
+    return { "sine", "saw", "triangle", "pulse" };
+}
+
+ParameterSpec floatSpec(juce::String apvtsId,
+                        juce::String statePath,
+                        juce::String displayName,
+                        ParameterScope scope,
+                        float minimum,
+                        float maximum,
+                        float defaultValue,
+                        juce::String unit)
+{
+    ParameterSpec spec;
+    spec.apvtsId = std::move(apvtsId);
+    spec.statePath = std::move(statePath);
+    spec.displayName = std::move(displayName);
+    spec.kind = ParameterKind::floatValue;
+    spec.scope = scope;
+    spec.minimum = minimum;
+    spec.maximum = maximum;
+    spec.defaultFloat = defaultValue;
+    spec.unit = std::move(unit);
+    return spec;
+}
+
 std::vector<ParameterSpec> buildSpecs()
 {
     std::vector<ParameterSpec> specs;
-    specs.reserve(88);
+    specs.reserve(94);
 
     const auto midiChoices = midiChannelChoices();
     const auto modifiers = modifierChoices();
@@ -136,6 +163,55 @@ std::vector<ParameterSpec> buildSpecs()
                                        1));
         }
     }
+
+    // Контракт минимального ядра этапа 1.3, не закон всего инструмента.
+    // Громкость партии, env/amp/level и копии на партии 2–8 намеренно отсутствуют.
+    specs.push_back(floatSpec("xm.master.volume",
+                              "master/volume",
+                              "Master Volume",
+                              ParameterScope::global,
+                              0.0f,
+                              1.0f,
+                              0.8f,
+                              "linear"));
+    specs.push_back(choiceSpec("xm.p1.o1.waveSource",
+                               "part/1/osc/1/waveSource",
+                               "Part 1 Osc 1 Wave",
+                               ParameterScope::oscillator,
+                               basicWaveChoices(),
+                               0));
+    specs.push_back(floatSpec("xm.p1.amp.attack",
+                              "part/1/env/amp/attack",
+                              "Part 1 Amp Attack",
+                              ParameterScope::part,
+                              0.001f,
+                              5.0f,
+                              0.01f,
+                              "s"));
+    specs.push_back(floatSpec("xm.p1.amp.decay",
+                              "part/1/env/amp/decay",
+                              "Part 1 Amp Decay",
+                              ParameterScope::part,
+                              0.001f,
+                              5.0f,
+                              0.2f,
+                              "s"));
+    specs.push_back(floatSpec("xm.p1.amp.sustain",
+                              "part/1/env/amp/sustain",
+                              "Part 1 Amp Sustain",
+                              ParameterScope::part,
+                              0.0f,
+                              1.0f,
+                              0.8f,
+                              "linear"));
+    specs.push_back(floatSpec("xm.p1.amp.release",
+                              "part/1/env/amp/release",
+                              "Part 1 Amp Release",
+                              ParameterScope::part,
+                              0.001f,
+                              5.0f,
+                              0.4f,
+                              "s"));
 
     return specs;
 }
@@ -201,6 +277,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout ParameterRegistry::createLay
         if (spec.kind == ParameterKind::boolean)
         {
             layout.add(std::make_unique<juce::AudioParameterBool>(id, spec.displayName, spec.defaultBool));
+            continue;
+        }
+
+        if (spec.kind == ParameterKind::floatValue)
+        {
+            layout.add(std::make_unique<juce::AudioParameterFloat>(
+                id,
+                spec.displayName,
+                juce::NormalisableRange<float>(spec.minimum, spec.maximum),
+                spec.defaultFloat,
+                juce::AudioParameterFloatAttributes().withLabel(spec.unit)));
             continue;
         }
 

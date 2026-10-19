@@ -1,9 +1,11 @@
 #include "Parameters/ParameterRegistry.h"
 #include "PluginProcessor.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <string>
 #include <unordered_set>
 
 namespace
@@ -22,12 +24,48 @@ juce::AudioParameterBool* boolParameter(XenMileniumAudioProcessor& processor, co
     return dynamic_cast<juce::AudioParameterBool*>(processor.getValueTreeState().getParameter(spec->apvtsId));
 }
 
+juce::AudioParameterFloat* floatParameter(XenMileniumAudioProcessor& processor, const char* statePath)
+{
+    const auto* spec = xenmilenium::ParameterRegistry::findByStatePath(statePath);
+    if (spec == nullptr)
+        return nullptr;
+    return dynamic_cast<juce::AudioParameterFloat*>(processor.getValueTreeState().getParameter(spec->apvtsId));
+}
+
 juce::AudioParameterChoice* choiceParameter(XenMileniumAudioProcessor& processor, const char* statePath)
 {
     const auto* spec = xenmilenium::ParameterRegistry::findByStatePath(statePath);
     if (spec == nullptr)
         return nullptr;
     return dynamic_cast<juce::AudioParameterChoice*>(processor.getValueTreeState().getParameter(spec->apvtsId));
+}
+
+bool bufferIsFinite(const juce::AudioBuffer<float>& buffer)
+{
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        const float* samples = buffer.getReadPointer(channel);
+        for (int index = 0; index < buffer.getNumSamples(); ++index)
+            if (! std::isfinite(samples[index]))
+                return false;
+    }
+    return true;
+}
+
+bool bufferHasEnergy(const juce::AudioBuffer<float>& buffer)
+{
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        const float* samples = buffer.getReadPointer(channel);
+        for (int index = 0; index < buffer.getNumSamples(); ++index)
+        {
+            std::uint32_t bits = 1;
+            std::memcpy(&bits, samples + index, sizeof(bits));
+            if (bits != 0u)
+                return true;
+        }
+    }
+    return false;
 }
 
 bool bufferIsSilent(const juce::AudioBuffer<float>& buffer)
@@ -56,11 +94,13 @@ const juce::var* property(const juce::var& object, const char* name)
 int checkRegistry()
 {
     const auto& specs = xenmilenium::ParameterRegistry::all();
-    if (specs.size() != 88)
-        return fail("expected 88 base parameters, got " + juce::String(static_cast<int>(specs.size())));
+    if (specs.size() != 94)
+        return fail("expected 94 registered parameters, got " + juce::String(static_cast<int>(specs.size())));
 
     std::unordered_set<std::uint32_t> studioOneHashes;
     std::unordered_set<std::uint32_t> rawHashes;
+    std::unordered_set<std::string> paths;
+    std::unordered_set<std::string> ids;
 
     for (const auto& spec : specs)
     {
@@ -77,12 +117,18 @@ int checkRegistry()
             return fail("VST3 parameter hash is outside the allowed range: " + spec.apvtsId);
         if (! studioOneHashes.insert(studioOneHash).second || ! rawHashes.insert(rawHash).second)
             return fail("VST3 parameter hash collision: " + spec.apvtsId);
+        if (! paths.insert(spec.statePath.toStdString()).second || ! ids.insert(spec.apvtsId.toStdString()).second)
+            return fail("duplicate state path or APVTS id: " + spec.apvtsId);
 
         if (spec.kind == xenmilenium::ParameterKind::boolean && ! spec.choices.isEmpty())
             return fail("boolean parameter has choices: " + spec.statePath);
         if (spec.kind == xenmilenium::ParameterKind::choice
             && (spec.choices.size() < 2 || ! juce::isPositiveAndBelow(spec.defaultChoice, spec.choices.size())))
             return fail("choice parameter is incomplete: " + spec.statePath);
+        if (spec.kind == xenmilenium::ParameterKind::floatValue
+            && (! (spec.minimum < spec.maximum) || spec.defaultFloat < spec.minimum || spec.defaultFloat > spec.maximum
+                || spec.unit.isEmpty() || ! spec.choices.isEmpty()))
+            return fail("float parameter is incomplete: " + spec.statePath);
     }
 
     const auto* enabled = xenmilenium::ParameterRegistry::findByStatePath("part/1/enabled");
@@ -269,15 +315,25 @@ int checkEmptyExample()
     if (property(*property(parsed, "parameters"), "part/1/enabled") == nullptr)
         return fail("registered path disappeared after loading the example");
 
-    processor.prepareToPlay(44100.0, 16);
-    juce::AudioBuffer<float> buffer(2, 16);
+    auto* volume = floatParameter(processor, "master/volume");
+    auto* wave = choiceParameter(processor, "part/1/osc/1/waveSource");
+    auto* attack = floatParameter(processor, "part/1/env/amp/attack");
+    if (volume == nullptr || ! juce::approximatelyEqual(volume->get(), 0.8f))
+        return fail("null master volume did not stay at the registry default");
+    if (wave == nullptr || wave->getCurrentChoiceName() != "sine")
+        return fail("null wave source did not stay at sine");
+    if (attack == nullptr || ! juce::approximatelyEqual(attack->get(), 0.01f))
+        return fail("null amp attack did not stay at the registry default");
+
+    processor.prepareToPlay(44100.0, 128);
+    juce::AudioBuffer<float> buffer(2, 128);
     buffer.clear();
     buffer.setSample(0, 0, -1.0f);
     juce::MidiBuffer midi;
     midi.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 0);
     processor.processBlock(buffer, midi);
-    if (! bufferIsSilent(buffer))
-        return fail("loaded parameters produced audio");
+    if (! bufferIsFinite(buffer) || ! bufferHasEnergy(buffer))
+        return fail("empty example defaults did not produce a finite note");
     processor.releaseResources();
     return 0;
 }

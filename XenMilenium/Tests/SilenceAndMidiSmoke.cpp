@@ -1,7 +1,9 @@
 #include "PluginProcessor.h"
 
 int runStateAndParameterTests();
+int runMinimalCoreTests();
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -30,6 +32,36 @@ bool bufferIsSilent(const juce::AudioBuffer<float>& buffer)
     return true;
 }
 
+bool bufferIsFinite(const juce::AudioBuffer<float>& buffer)
+{
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        const float* samples = buffer.getReadPointer(channel);
+        for (int index = 0; index < buffer.getNumSamples(); ++index)
+            if (! std::isfinite(samples[index]))
+                return false;
+    }
+
+    return true;
+}
+
+bool bufferHasEnergy(const juce::AudioBuffer<float>& buffer)
+{
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        const float* samples = buffer.getReadPointer(channel);
+        for (int index = 0; index < buffer.getNumSamples(); ++index)
+        {
+            std::uint32_t bits = 1;
+            std::memcpy(&bits, samples + index, sizeof(bits));
+            if (bits != 0u)
+                return true;
+        }
+    }
+
+    return false;
+}
+
 int fail(const char* message)
 {
     std::cerr << message << '\n';
@@ -48,8 +80,8 @@ int main()
 
     juce::AudioProcessor::BusesLayout monoOut;
     monoOut.outputBuses.add(juce::AudioChannelSet::mono());
-    if (processor.isBusesLayoutSupported(monoOut))
-        return fail("mono output layout was accepted");
+    if (! processor.isBusesLayoutSupported(monoOut))
+        return fail("mono output layout was rejected");
 
     juce::AudioProcessor::BusesLayout stereoInOut;
     stereoInOut.inputBuses.add(juce::AudioChannelSet::stereo());
@@ -73,8 +105,8 @@ int main()
 
     processor.processBlock(buffer, midi);
 
-    if (! bufferIsSilent(buffer))
-        return fail("processBlock left a non-silent or non-finite sample");
+    if (! bufferIsFinite(buffer) || ! bufferHasEnergy(buffer))
+        return fail("note-on block was silent or non-finite");
 
     if (processor.getLastNoteNumber() != 64 || processor.getNoteOnCount() != 2)
     {
@@ -90,8 +122,8 @@ int main()
     juce::MidiBuffer emptyMidi;
     processor.processBlock(buffer, emptyMidi);
 
-    if (! bufferIsSilent(buffer))
-        return fail("second processBlock left a non-silent sample");
+    if (! bufferIsFinite(buffer) || ! bufferHasEnergy(buffer))
+        return fail("held note was silent or non-finite in the next block");
 
     if (processor.getLastNoteNumber() != 64 || processor.getNoteOnCount() != 2)
         return fail("empty midi buffer changed the note state");
@@ -120,6 +152,9 @@ int main()
 
     if (const int stateResult = runStateAndParameterTests())
         return stateResult;
+
+    if (const int coreResult = runMinimalCoreTests())
+        return coreResult;
 
     std::cout << "smoke ok\n";
     return 0;

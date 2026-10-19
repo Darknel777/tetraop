@@ -39,7 +39,7 @@ juce_add_plugin(XenMilenium
     PRODUCT_NAME "Xen Milenium"
     PLUGIN_NAME "Xen Milenium"
     VST3_CATEGORIES "Instrument Synth"
-    DESCRIPTION "Xen Milenium stage 0 scaffold")
+    DESCRIPTION "Xen Milenium minimal polyphonic core")
 
 juce_generate_juce_header(XenMilenium)
 
@@ -52,7 +52,9 @@ target_sources(XenMilenium
         Source/Parameters/ParameterRegistry.h
         Source/Parameters/ParameterRegistry.cpp
         Source/Parameters/StateDocument.h
-        Source/Parameters/StateDocument.cpp)
+        Source/Parameters/StateDocument.cpp
+        Source/Engine/MinimalVoiceCore.h
+        Source/Engine/MinimalVoiceCore.cpp)
 
 target_include_directories(XenMilenium PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
@@ -81,6 +83,7 @@ target_sources(XenMilenium_Smoke
     PRIVATE
         Tests/SilenceAndMidiSmoke.cpp
         Tests/StateAndParameterTests.cpp
+        Tests/MinimalCoreTests.cpp
         Source/PluginProcessor.h
         Source/PluginProcessor.cpp
         Source/PluginEditor.h
@@ -88,7 +91,9 @@ target_sources(XenMilenium_Smoke
         Source/Parameters/ParameterRegistry.h
         Source/Parameters/ParameterRegistry.cpp
         Source/Parameters/StateDocument.h
-        Source/Parameters/StateDocument.cpp)
+        Source/Parameters/StateDocument.cpp
+        Source/Engine/MinimalVoiceCore.h
+        Source/Engine/MinimalVoiceCore.cpp)
 
 target_include_directories(XenMilenium_Smoke PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
