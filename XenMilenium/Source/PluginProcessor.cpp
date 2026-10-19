@@ -25,12 +25,23 @@ XenMileniumAudioProcessor::XenMileniumAudioProcessor()
     // get() / getIndex() читают атом, который обновляет и setValue, и автоматизация.
     // getRawParameterValue в этом JUCE от setValue не обновляется, поэтому пресет его не использует.
     masterVolume = floatSlot(apvts, "xm.master.volume");
-    waveSource = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter("xm.p1.o1.waveSource"));
-    ampAttack = floatSlot(apvts, "xm.p1.amp.attack");
-    ampDecay = floatSlot(apvts, "xm.p1.amp.decay");
-    ampSustain = floatSlot(apvts, "xm.p1.amp.sustain");
-    ampRelease = floatSlot(apvts, "xm.p1.amp.release");
-    partOneEnabled = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("xm.p1.enabled"));
+    for (int part = 1; part <= xenmilenium::MinimalVoiceCore::partCount; ++part)
+    {
+        const auto id = [part](const char* suffix)
+        {
+            return "xm.p" + juce::String(part) + "." + suffix;
+        };
+        auto& slot = partSlots[static_cast<std::size_t>(part - 1)];
+        slot.enabled = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(id("enabled")));
+        slot.mono = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(id("mono")));
+        slot.legato = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(id("legato")));
+        slot.midiChannel = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("midiChannel")));
+        slot.wave = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("o1.waveSource")));
+        slot.attack = floatSlot(apvts, id("amp.attack").toRawUTF8());
+        slot.decay = floatSlot(apvts, id("amp.decay").toRawUTF8());
+        slot.sustain = floatSlot(apvts, id("amp.sustain").toRawUTF8());
+        slot.release = floatSlot(apvts, id("amp.release").toRawUTF8());
+    }
 }
 
 XenMileniumAudioProcessor::~XenMileniumAudioProcessor() = default;
@@ -65,8 +76,7 @@ void XenMileniumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     const int numSamples = buffer.getNumSamples();
     if (numSamples > 0 && currentSampleRate > 0.0)
     {
-        const bool enabled = partOneEnabled == nullptr || partOneEnabled->get();
-        voiceCore.setPartEnabled(enabled);
+        syncPartEnables();
 
         int rendered = 0;
         for (const auto metadata : midi)
@@ -107,12 +117,40 @@ void XenMileniumAudioProcessor::handleMidi(const juce::MidiBuffer& midi)
     }
 }
 
+void XenMileniumAudioProcessor::syncPartEnables() noexcept
+{
+    const auto controls = readControls();
+    for (int part = 0; part < xenmilenium::MinimalVoiceCore::partCount; ++part)
+        voiceCore.setPartEnabled(part, controls.parts[static_cast<std::size_t>(part)].enabled);
+}
+
+bool XenMileniumAudioProcessor::partAcceptsChannel(const xenmilenium::PartControls& part, int channel) noexcept
+{
+    if (! part.enabled || channel < 1 || channel > 16)
+        return false;
+    return part.midiChannel == 0 || part.midiChannel == channel;
+}
+
 void XenMileniumAudioProcessor::applyMidiToCore(const juce::MidiMessage& message) noexcept
 {
-    if (message.isNoteOn())
-        voiceCore.noteOn(message.getNoteNumber(), message.getFloatVelocity());
-    else if (message.isNoteOff())
-        voiceCore.noteOff(message.getNoteNumber());
+    const auto controls = readControls();
+    const int channel = message.getChannel();
+    const bool sustain = message.isController() && message.getControllerNumber() == 64;
+    const bool pedalDown = sustain && message.getControllerValue() >= 64;
+
+    for (int part = 0; part < xenmilenium::MinimalVoiceCore::partCount; ++part)
+    {
+        const auto& partControls = controls.parts[static_cast<std::size_t>(part)];
+        if (! partAcceptsChannel(partControls, channel))
+            continue;
+
+        if (sustain)
+            voiceCore.setSustain(part, channel, pedalDown);
+        else if (message.isNoteOn())
+            voiceCore.noteOn(part, channel, message.getNoteNumber(), message.getFloatVelocity(), partControls.mono, partControls.legato);
+        else if (message.isNoteOff())
+            voiceCore.noteOff(part, channel, message.getNoteNumber());
+    }
 }
 
 void XenMileniumAudioProcessor::renderRange(juce::AudioBuffer<float>& buffer, int startSample, int endSample) noexcept
@@ -126,15 +164,26 @@ void XenMileniumAudioProcessor::renderRange(juce::AudioBuffer<float>& buffer, in
     }
 }
 
-xenmilenium::AmplitudeControls XenMileniumAudioProcessor::readControls() const noexcept
+xenmilenium::EngineControls XenMileniumAudioProcessor::readControls() const noexcept
 {
-    xenmilenium::AmplitudeControls controls;
-    controls.attackSeconds = finiteOr(ampAttack != nullptr ? ampAttack->get() : 0.01f, 0.01f);
-    controls.decaySeconds = finiteOr(ampDecay != nullptr ? ampDecay->get() : 0.2f, 0.2f);
-    controls.sustain = finiteOr(ampSustain != nullptr ? ampSustain->get() : 0.8f, 0.8f);
-    controls.releaseSeconds = finiteOr(ampRelease != nullptr ? ampRelease->get() : 0.4f, 0.4f);
+    xenmilenium::EngineControls controls;
     controls.masterGain = finiteOr(masterVolume != nullptr ? masterVolume->get() : 0.8f, 0.8f);
-    controls.wave = juce::jlimit(0, 3, waveSource != nullptr ? waveSource->getIndex() : 0);
+
+    for (int part = 0; part < xenmilenium::MinimalVoiceCore::partCount; ++part)
+    {
+        const auto& slot = partSlots[static_cast<std::size_t>(part)];
+        auto& destination = controls.parts[static_cast<std::size_t>(part)];
+        destination.enabled = slot.enabled != nullptr ? slot.enabled->get() : part == 0;
+        destination.mono = slot.mono != nullptr && slot.mono->get();
+        destination.legato = slot.legato != nullptr && slot.legato->get();
+        destination.midiChannel = slot.midiChannel != nullptr ? slot.midiChannel->getIndex() : 0;
+        destination.wave = juce::jlimit(0, 3, slot.wave != nullptr ? slot.wave->getIndex() : 0);
+        destination.attackSeconds = finiteOr(slot.attack != nullptr ? slot.attack->get() : 0.01f, 0.01f);
+        destination.decaySeconds = finiteOr(slot.decay != nullptr ? slot.decay->get() : 0.2f, 0.2f);
+        destination.sustain = finiteOr(slot.sustain != nullptr ? slot.sustain->get() : 0.8f, 0.8f);
+        destination.releaseSeconds = finiteOr(slot.release != nullptr ? slot.release->get() : 0.4f, 0.4f);
+    }
+
     return controls;
 }
 
@@ -246,6 +295,20 @@ int XenMileniumAudioProcessor::getNoteOnCount() const noexcept
 int XenMileniumAudioProcessor::getActiveVoiceCount() const noexcept
 {
     return voiceCore.activeVoiceCount();
+}
+
+int XenMileniumAudioProcessor::getActiveVoiceCountForPart(int partNumber) const noexcept
+{
+    if (partNumber < 1 || partNumber > xenmilenium::MinimalVoiceCore::partCount)
+        return 0;
+    return voiceCore.activeVoiceCountForPart(partNumber - 1);
+}
+
+bool XenMileniumAudioProcessor::isNoteActive(int partNumber, int channel, int noteNumber) const noexcept
+{
+    if (partNumber < 1 || partNumber > xenmilenium::MinimalVoiceCore::partCount)
+        return false;
+    return voiceCore.isNoteActive(partNumber - 1, channel, noteNumber);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

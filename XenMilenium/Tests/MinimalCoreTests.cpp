@@ -256,43 +256,49 @@ int checkPolyphonyAndPool()
     if (processor.getActiveVoiceCount() != 3 || ! bufferHasEnergy(buffer))
         return fail("three notes did not sound together");
 
+    processor.releaseResources();
+
+    XenMileniumAudioProcessor pool;
+    fastEnvelope(pool, 0.01f);
+    pool.prepareToPlay(48000.0, 256);
     juce::MidiBuffer more;
     for (int note = 60; note <= 67; ++note)
         more.addEvent(juce::MidiMessage::noteOn(1, note, static_cast<juce::uint8>(100)), note - 60);
-    if (const int result = render(processor, buffer, more))
+    if (const int result = render(pool, buffer, more))
         return result;
-    if (processor.getActiveVoiceCount() != 8)
-        return fail("voice pool did not fill to 8, count=" + juce::String(processor.getActiveVoiceCount()));
+    if (pool.getActiveVoiceCount() != 8)
+        return fail("voice pool did not fill to 8, count=" + juce::String(pool.getActiveVoiceCount()));
 
     juce::MidiBuffer overflow;
     overflow.addEvent(juce::MidiMessage::noteOn(1, 80, static_cast<juce::uint8>(127)), 0);
-    if (const int result = render(processor, buffer, overflow))
+    if (const int result = render(pool, buffer, overflow))
         return result;
-    if (processor.getActiveVoiceCount() != 8)
-        return fail("a full pool stole or grew instead of ignoring the new note");
+    if (pool.getActiveVoiceCount() != 8 || pool.isNoteActive(1, 1, 60) || ! pool.isNoteActive(1, 1, 80))
+        return fail("the ninth note did not steal the oldest voice");
 
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         if (std::abs(buffer.getSample(0, sample)) > 1.01f)
             return fail("voice sum exceeded the protected level");
 
     juce::MidiBuffer releaseOne;
-    releaseOne.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
-    if (const int result = render(processor, buffer, releaseOne))
+    releaseOne.addEvent(juce::MidiMessage::noteOff(1, 80), 0);
+    if (const int result = render(pool, buffer, releaseOne))
         return result;
 
     juce::AudioBuffer<float> wait(2, 2048);
     juce::MidiBuffer empty;
-    if (const int result = render(processor, wait, empty))
+    if (const int result = render(pool, wait, empty))
         return result;
-    if (processor.getActiveVoiceCount() != 7)
+    if (pool.getActiveVoiceCount() != 7 || pool.isNoteActive(1, 1, 80))
         return fail("released note did not leave the pool");
 
     juce::MidiBuffer reused;
-    reused.addEvent(juce::MidiMessage::noteOn(1, 80, static_cast<juce::uint8>(127)), 0);
-    if (const int result = render(processor, buffer, reused))
+    reused.addEvent(juce::MidiMessage::noteOn(1, 90, static_cast<juce::uint8>(127)), 0);
+    if (const int result = render(pool, buffer, reused))
         return result;
-    if (processor.getActiveVoiceCount() != 8 || ! bufferHasEnergy(buffer))
+    if (pool.getActiveVoiceCount() != 8 || ! pool.isNoteActive(1, 1, 90) || ! bufferHasEnergy(buffer))
         return fail("freed slot did not accept a new pitch");
+    pool.releaseResources();
 
     processor.releaseResources();
     return 0;
@@ -462,7 +468,7 @@ int checkPartEnableAndBypass()
     auto* partOne = boolParameter(processor, "part/1/enabled");
     auto* partTwo = boolParameter(processor, "part/2/enabled");
     static_cast<juce::AudioProcessorParameter*>(partOne)->setValue(0.0f);
-    static_cast<juce::AudioProcessorParameter*>(partTwo)->setValue(1.0f);
+    static_cast<juce::AudioProcessorParameter*>(partTwo)->setValue(0.0f);
     processor.prepareToPlay(48000.0, 128);
     juce::AudioBuffer<float> buffer(2, 128);
     if (const int result = renderNote(processor, buffer, 69))
@@ -642,13 +648,18 @@ int checkCoreParameters()
     if (! juce::approximatelyEqual(waveParameter->convertTo0to1(3.0f), 1.0f))
         return fail("wave source normalisation is not index / 3");
 
-    if (xenmilenium::ParameterRegistry::findByStatePath("part/2/osc/1/waveSource") != nullptr
-        || xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/2/waveSource") != nullptr
+    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/2/waveSource") != nullptr
         || xenmilenium::ParameterRegistry::findByStatePath("part/1/env/amp/level") != nullptr
         || xenmilenium::ParameterRegistry::findByStatePath("part/1/volume") != nullptr
-        || xenmilenium::ParameterRegistry::findByStatePath("part/2/env/amp/attack") != nullptr
         || xenmilenium::ParameterRegistry::findByStatePath("part/1/env/filter/attack") != nullptr)
-        return fail("minimal core registered a parameter outside its set");
+        return fail("engine registered a parameter outside its set");
+    const auto* partEightWave = xenmilenium::ParameterRegistry::findByStatePath("part/8/osc/1/waveSource");
+    const auto* partEightAttack = xenmilenium::ParameterRegistry::findByStatePath("part/8/env/amp/attack");
+    if (partEightWave == nullptr || partEightWave->apvtsId != "xm.p8.o1.waveSource"
+        || partEightAttack == nullptr || partEightAttack->apvtsId != "xm.p8.amp.attack"
+        || ! juce::approximatelyEqual(partEightAttack->minimum, 0.001f)
+        || ! juce::approximatelyEqual(partEightAttack->maximum, 5.0f))
+        return fail("part 8 did not receive the core wave and envelope contract");
 
     setPlain(floatParameter(processor, "master/volume"), 0.25f);
     setPlain(floatParameter(processor, "part/1/env/amp/attack"), 1.5f);
@@ -692,14 +703,14 @@ int checkCoreParameters()
         || ! boolParameter(restored, "part/8/enabled")->get())
         return fail("missing core keys did not return to defaults");
 
-    if (! restored.restoreStateDocument("{\"formatVersion\":1,\"parameters\":{\"part/2/osc/1/waveSource\":\"wt/analog\"}}"))
+    if (! restored.restoreStateDocument("{\"formatVersion\":1,\"parameters\":{\"part/1/osc/2/waveSource\":\"wt/analog\"}}"))
         return fail("unregistered wave source was rejected");
     juce::var parsed;
     juce::JSON::parse(restored.saveStateDocument(), parsed);
     const auto unknown = parsed.getProperty("unknown", {}).getProperty("parameters", {});
     const auto* unknownObject = unknown.getDynamicObject();
     const auto* preserved = unknownObject != nullptr
-                                ? unknownObject->getProperties().getVarPointer(juce::Identifier("part/2/osc/1/waveSource"))
+                                ? unknownObject->getProperties().getVarPointer(juce::Identifier("part/1/osc/2/waveSource"))
                                 : nullptr;
     if (preserved == nullptr || preserved->toString() != "wt/analog")
         return fail("table id on an unregistered oscillator was not preserved");

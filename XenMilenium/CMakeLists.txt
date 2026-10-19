@@ -39,7 +39,7 @@ juce_add_plugin(XenMilenium
     PRODUCT_NAME "Xen Milenium"
     PLUGIN_NAME "Xen Milenium"
     VST3_CATEGORIES "Instrument Synth"
-    DESCRIPTION "Xen Milenium minimal polyphonic core")
+    DESCRIPTION "Xen Milenium eight-part voice core")
 
 juce_generate_juce_header(XenMilenium)
 
@@ -84,6 +84,7 @@ target_sources(XenMilenium_Smoke
         Tests/SilenceAndMidiSmoke.cpp
         Tests/StateAndParameterTests.cpp
         Tests/MinimalCoreTests.cpp
+        Tests/EightPartTests.cpp
         Source/PluginProcessor.h
         Source/PluginProcessor.cpp
         Source/PluginEditor.h

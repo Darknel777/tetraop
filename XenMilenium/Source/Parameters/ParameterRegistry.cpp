@@ -104,7 +104,7 @@ ParameterSpec floatSpec(juce::String apvtsId,
 std::vector<ParameterSpec> buildSpecs()
 {
     std::vector<ParameterSpec> specs;
-    specs.reserve(94);
+    specs.reserve(129);
 
     const auto midiChoices = midiChannelChoices();
     const auto modifiers = modifierChoices();
@@ -162,10 +162,48 @@ std::vector<ParameterSpec> buildSpecs()
                                        positions,
                                        1));
         }
+
+        // Тот же контракт ядра, что у партии 1: форма осциллятора 1 и Amp. Не закон инструмента.
+        specs.push_back(choiceSpec(partId(part, "o1.waveSource"),
+                                   partPath(part, "osc/1/waveSource"),
+                                   partLabel(part, "Osc 1 Wave"),
+                                   ParameterScope::oscillator,
+                                   basicWaveChoices(),
+                                   0));
+        specs.push_back(floatSpec(partId(part, "amp.attack"),
+                                  partPath(part, "env/amp/attack"),
+                                  partLabel(part, "Amp Attack"),
+                                  ParameterScope::part,
+                                  0.001f,
+                                  5.0f,
+                                  0.01f,
+                                  "s"));
+        specs.push_back(floatSpec(partId(part, "amp.decay"),
+                                  partPath(part, "env/amp/decay"),
+                                  partLabel(part, "Amp Decay"),
+                                  ParameterScope::part,
+                                  0.001f,
+                                  5.0f,
+                                  0.2f,
+                                  "s"));
+        specs.push_back(floatSpec(partId(part, "amp.sustain"),
+                                  partPath(part, "env/amp/sustain"),
+                                  partLabel(part, "Amp Sustain"),
+                                  ParameterScope::part,
+                                  0.0f,
+                                  1.0f,
+                                  0.8f,
+                                  "linear"));
+        specs.push_back(floatSpec(partId(part, "amp.release"),
+                                  partPath(part, "env/amp/release"),
+                                  partLabel(part, "Amp Release"),
+                                  ParameterScope::part,
+                                  0.001f,
+                                  5.0f,
+                                  0.4f,
+                                  "s"));
     }
 
-    // Контракт минимального ядра этапа 1.3, не закон всего инструмента.
-    // Громкость партии, env/amp/level и копии на партии 2–8 намеренно отсутствуют.
     specs.push_back(floatSpec("xm.master.volume",
                               "master/volume",
                               "Master Volume",
@@ -174,44 +212,6 @@ std::vector<ParameterSpec> buildSpecs()
                               1.0f,
                               0.8f,
                               "linear"));
-    specs.push_back(choiceSpec("xm.p1.o1.waveSource",
-                               "part/1/osc/1/waveSource",
-                               "Part 1 Osc 1 Wave",
-                               ParameterScope::oscillator,
-                               basicWaveChoices(),
-                               0));
-    specs.push_back(floatSpec("xm.p1.amp.attack",
-                              "part/1/env/amp/attack",
-                              "Part 1 Amp Attack",
-                              ParameterScope::part,
-                              0.001f,
-                              5.0f,
-                              0.01f,
-                              "s"));
-    specs.push_back(floatSpec("xm.p1.amp.decay",
-                              "part/1/env/amp/decay",
-                              "Part 1 Amp Decay",
-                              ParameterScope::part,
-                              0.001f,
-                              5.0f,
-                              0.2f,
-                              "s"));
-    specs.push_back(floatSpec("xm.p1.amp.sustain",
-                              "part/1/env/amp/sustain",
-                              "Part 1 Amp Sustain",
-                              ParameterScope::part,
-                              0.0f,
-                              1.0f,
-                              0.8f,
-                              "linear"));
-    specs.push_back(floatSpec("xm.p1.amp.release",
-                              "part/1/env/amp/release",
-                              "Part 1 Amp Release",
-                              ParameterScope::part,
-                              0.001f,
-                              5.0f,
-                              0.4f,
-                              "s"));
 
     return specs;
 }

@@ -2,6 +2,7 @@
 
 int runStateAndParameterTests();
 int runMinimalCoreTests();
+int runEightPartTests();
 
 #include <cmath>
 #include <cstdint>
@@ -155,6 +156,9 @@ int main()
 
     if (const int coreResult = runMinimalCoreTests())
         return coreResult;
+
+    if (const int partResult = runEightPartTests())
+        return partResult;
 
     std::cout << "smoke ok\n";
     return 0;
