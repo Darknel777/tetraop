@@ -650,10 +650,15 @@ int checkCoreParameters()
 
     if (xenmilenium::ParameterRegistry::findByStatePath("part/1/env/amp/level") != nullptr
         || xenmilenium::ParameterRegistry::findByStatePath("part/1/volume") != nullptr
-        || xenmilenium::ParameterRegistry::findByStatePath("part/1/env/filter/attack") != nullptr
+        || xenmilenium::ParameterRegistry::findByStatePath("part/1/filter/saturation") != nullptr
         || xenmilenium::ParameterRegistry::findByStatePath("part/1/mixer/noiseType") != nullptr
         || xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/1/directOut") != nullptr)
         return fail("engine registered a parameter outside its set");
+    const auto* filterAttack = xenmilenium::ParameterRegistry::findByStatePath("part/1/env/filter/attack");
+    const auto* lfoShape = xenmilenium::ParameterRegistry::findByStatePath("part/1/lfo/1/shape");
+    if (filterAttack == nullptr || filterAttack->apvtsId != "xm.p1.fenv.attack"
+        || lfoShape == nullptr || lfoShape->apvtsId != "xm.p1.l1.shape" || lfoShape->choices.size() != 6)
+        return fail("filter envelope or LFO was not registered");
     const auto* osc2Wave = xenmilenium::ParameterRegistry::findByStatePath("part/1/osc/2/waveSource");
     const auto* osc1Level = xenmilenium::ParameterRegistry::findByStatePath("part/1/mixer/osc1");
     const auto* osc2Level = xenmilenium::ParameterRegistry::findByStatePath("part/1/mixer/osc2");

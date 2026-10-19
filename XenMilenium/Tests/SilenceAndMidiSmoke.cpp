@@ -4,6 +4,7 @@ int runStateAndParameterTests();
 int runMinimalCoreTests();
 int runEightPartTests();
 int runMixerAndPoolTests();
+int runFilterLfoTests();
 
 #include <cmath>
 #include <cstdint>
@@ -163,6 +164,9 @@ int main()
 
     if (const int mixerResult = runMixerAndPoolTests())
         return mixerResult;
+
+    if (const int filterResult = runFilterLfoTests())
+        return filterResult;
 
     std::cout << "smoke ok\n";
     return 0;

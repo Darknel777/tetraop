@@ -39,7 +39,7 @@ juce_add_plugin(XenMilenium
     PRODUCT_NAME "Xen Milenium"
     PLUGIN_NAME "Xen Milenium"
     VST3_CATEGORIES "Instrument Synth"
-    DESCRIPTION "Xen Milenium eight-part oscillator mixer")
+    DESCRIPTION "Xen Milenium eight-part filter and LFO core")
 
 juce_generate_juce_header(XenMilenium)
 
@@ -86,6 +86,7 @@ target_sources(XenMilenium_Smoke
         Tests/MinimalCoreTests.cpp
         Tests/EightPartTests.cpp
         Tests/MixerAndPoolTests.cpp
+        Tests/FilterLfoTests.cpp
         Source/PluginProcessor.h
         Source/PluginProcessor.cpp
         Source/PluginEditor.h

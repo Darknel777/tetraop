@@ -94,8 +94,8 @@ const juce::var* property(const juce::var& object, const char* name)
 int checkRegistry()
 {
     const auto& specs = xenmilenium::ParameterRegistry::all();
-    if (specs.size() != 185)
-        return fail("expected 129 registered parameters, got " + juce::String(static_cast<int>(specs.size())));
+    if (specs.size() != 513)
+        return fail("expected 513 registered parameters, got " + juce::String(static_cast<int>(specs.size())));
 
     std::unordered_set<std::uint32_t> studioOneHashes;
     std::unordered_set<std::uint32_t> rawHashes;
@@ -140,8 +140,14 @@ int checkRegistry()
         return fail("oscillator modifier mapping is wrong");
     if (position == nullptr || position->scope != xenmilenium::ParameterScope::effect || position->apvtsId != "xm.p2.fx1.position")
         return fail("fx position mapping is wrong");
-    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/filter/cutoff") != nullptr)
-        return fail("cutoff was registered without a confirmed range");
+    const auto* cutoff = xenmilenium::ParameterRegistry::findByStatePath("part/1/filter/cutoff");
+    if (cutoff == nullptr || ! juce::approximatelyEqual(cutoff->minimum, 20.0f)
+        || ! juce::approximatelyEqual(cutoff->maximum, 20000.0f)
+        || ! juce::approximatelyEqual(cutoff->defaultFloat, 2000.0f)
+        || ! juce::approximatelyEqual(cutoff->skewCentre, 1000.0f))
+        return fail("cutoff range is not the stage 1.6 core contract");
+    if (xenmilenium::ParameterRegistry::findByStatePath("part/1/filter/saturation") != nullptr)
+        return fail("filter saturation was registered without a model");
     if (xenmilenium::ParameterRegistry::findByStatePath("part/1/matrix/slot/1/amount") != nullptr)
         return fail("matrix amount was registered as a fake parameter");
 

@@ -36,6 +36,7 @@ struct ParameterSpec
     float minimum = 0.0f;
     float maximum = 1.0f;
     float defaultFloat = 0.0f;
+    float skewCentre = 0.0f;
     juce::String unit;
 };
 

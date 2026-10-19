@@ -71,12 +71,37 @@ private:
         juce::AudioParameterFloat* decay = nullptr;
         juce::AudioParameterFloat* sustain = nullptr;
         juce::AudioParameterFloat* release = nullptr;
+        juce::AudioParameterChoice* filterType = nullptr;
+        juce::AudioParameterFloat* cutoff = nullptr;
+        juce::AudioParameterFloat* resonance = nullptr;
+        juce::AudioParameterFloat* drive = nullptr;
+        juce::AudioParameterFloat* keytrack = nullptr;
+        juce::AudioParameterFloat* filterMix = nullptr;
+        juce::AudioParameterFloat* filterAttack = nullptr;
+        juce::AudioParameterFloat* filterDecay = nullptr;
+        juce::AudioParameterFloat* filterSustain = nullptr;
+        juce::AudioParameterFloat* filterRelease = nullptr;
+        juce::AudioParameterFloat* filterAmount = nullptr;
+        juce::AudioParameterFloat* lfo1ToCutoff = nullptr;
+        juce::AudioParameterFloat* lfo2ToPitch = nullptr;
+        struct LfoSlots
+        {
+            juce::AudioParameterChoice* shape = nullptr;
+            juce::AudioParameterBool* retrig = nullptr;
+            juce::AudioParameterChoice* polarity = nullptr;
+            juce::AudioParameterBool* sync = nullptr;
+            juce::AudioParameterFloat* rateHz = nullptr;
+            juce::AudioParameterChoice* rateSync = nullptr;
+            juce::AudioParameterFloat* freeVariation = nullptr;
+        };
+        std::array<LfoSlots, xenmilenium::MinimalVoiceCore::lfoCount> lfo {};
     };
 
     void handleMidi(const juce::MidiBuffer& midi);
     void syncPartEnables() noexcept;
     void applyMidiToCore(const juce::MidiMessage& message) noexcept;
     void renderRange(juce::AudioBuffer<float>& buffer, int startSample, int endSample) noexcept;
+    void updateTempo() noexcept;
     xenmilenium::EngineControls readControls() const noexcept;
     static bool partAcceptsChannel(const xenmilenium::PartControls& part, int channel) noexcept;
 
@@ -88,6 +113,7 @@ private:
     std::atomic<int> lastNoteNumber { -1 };
     std::atomic<int> noteOnCount { 0 };
     double currentSampleRate = 0.0;
+    float currentTempoBpm = 120.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XenMileniumAudioProcessor)
 };

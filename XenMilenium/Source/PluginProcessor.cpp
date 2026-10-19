@@ -48,6 +48,34 @@ XenMileniumAudioProcessor::XenMileniumAudioProcessor()
         slot.decay = floatSlot(apvts, id("amp.decay").toRawUTF8());
         slot.sustain = floatSlot(apvts, id("amp.sustain").toRawUTF8());
         slot.release = floatSlot(apvts, id("amp.release").toRawUTF8());
+        slot.filterType = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(id("flt.type")));
+        slot.cutoff = floatSlot(apvts, id("flt.cutoff").toRawUTF8());
+        slot.resonance = floatSlot(apvts, id("flt.resonance").toRawUTF8());
+        slot.drive = floatSlot(apvts, id("flt.drive").toRawUTF8());
+        slot.keytrack = floatSlot(apvts, id("flt.keytrack").toRawUTF8());
+        slot.filterMix = floatSlot(apvts, id("flt.mix").toRawUTF8());
+        slot.filterAttack = floatSlot(apvts, id("fenv.attack").toRawUTF8());
+        slot.filterDecay = floatSlot(apvts, id("fenv.decay").toRawUTF8());
+        slot.filterSustain = floatSlot(apvts, id("fenv.sustain").toRawUTF8());
+        slot.filterRelease = floatSlot(apvts, id("fenv.release").toRawUTF8());
+        slot.filterAmount = floatSlot(apvts, id("fenv.amount").toRawUTF8());
+        slot.lfo1ToCutoff = floatSlot(apvts, id("l1.toCutoff").toRawUTF8());
+        slot.lfo2ToPitch = floatSlot(apvts, id("l2.toPitch").toRawUTF8());
+        for (int lfo = 1; lfo <= xenmilenium::MinimalVoiceCore::lfoCount; ++lfo)
+        {
+            const auto lfoId = [part, lfo](const char* suffix)
+            {
+                return "xm.p" + juce::String(part) + ".l" + juce::String(lfo) + "." + suffix;
+            };
+            auto& destination = slot.lfo[static_cast<std::size_t>(lfo - 1)];
+            destination.shape = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(lfoId("shape")));
+            destination.retrig = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(lfoId("retrig")));
+            destination.polarity = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(lfoId("polarity")));
+            destination.sync = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(lfoId("sync")));
+            destination.rateHz = floatSlot(apvts, lfoId("rateHz").toRawUTF8());
+            destination.rateSync = dynamic_cast<juce::AudioParameterChoice*>(apvts.getParameter(lfoId("rateSync")));
+            destination.freeVariation = floatSlot(apvts, lfoId("freeVar").toRawUTF8());
+        }
     }
 }
 
@@ -84,6 +112,7 @@ void XenMileniumAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, j
     if (numSamples > 0 && currentSampleRate > 0.0)
     {
         syncPartEnables();
+        updateTempo();
 
         int rendered = 0;
         for (const auto metadata : midi)
@@ -154,7 +183,12 @@ void XenMileniumAudioProcessor::applyMidiToCore(const juce::MidiMessage& message
         if (sustain)
             voiceCore.setSustain(part, channel, pedalDown);
         else if (message.isNoteOn())
-            voiceCore.noteOn(part, channel, message.getNoteNumber(), message.getFloatVelocity(), partControls.mono, partControls.legato);
+        {
+            std::array<bool, xenmilenium::MinimalVoiceCore::lfoCount> retrig {};
+            for (int index = 0; index < xenmilenium::MinimalVoiceCore::lfoCount; ++index)
+                retrig[static_cast<std::size_t>(index)] = partControls.lfo[static_cast<std::size_t>(index)].retrig;
+            voiceCore.noteOn(part, channel, message.getNoteNumber(), message.getFloatVelocity(), partControls.mono, partControls.legato, retrig);
+        }
         else if (message.isNoteOff())
             voiceCore.noteOff(part, channel, message.getNoteNumber());
     }
@@ -171,10 +205,27 @@ void XenMileniumAudioProcessor::renderRange(juce::AudioBuffer<float>& buffer, in
     }
 }
 
+void XenMileniumAudioProcessor::updateTempo() noexcept
+{
+    currentTempoBpm = 120.0f;
+    if (auto* head = getPlayHead())
+    {
+        if (const auto position = head->getPosition())
+        {
+            if (const auto bpm = position->getBpm())
+            {
+                if (std::isfinite(*bpm) && *bpm > 0.0)
+                    currentTempoBpm = static_cast<float>(*bpm);
+            }
+        }
+    }
+}
+
 xenmilenium::EngineControls XenMileniumAudioProcessor::readControls() const noexcept
 {
     xenmilenium::EngineControls controls;
     controls.masterGain = finiteOr(masterVolume != nullptr ? masterVolume->get() : 0.8f, 0.8f);
+    controls.tempoBpm = std::isfinite(currentTempoBpm) && currentTempoBpm > 0.0f ? currentTempoBpm : 120.0f;
 
     for (int part = 0; part < xenmilenium::MinimalVoiceCore::partCount; ++part)
     {
@@ -197,6 +248,32 @@ xenmilenium::EngineControls XenMileniumAudioProcessor::readControls() const noex
         destination.decaySeconds = finiteOr(slot.decay != nullptr ? slot.decay->get() : 0.2f, 0.2f);
         destination.sustain = finiteOr(slot.sustain != nullptr ? slot.sustain->get() : 0.8f, 0.8f);
         destination.releaseSeconds = finiteOr(slot.release != nullptr ? slot.release->get() : 0.4f, 0.4f);
+        destination.filterType = juce::jlimit(0, xenmilenium::MinimalVoiceCore::filterTypeCount - 1,
+                                              slot.filterType != nullptr ? slot.filterType->getIndex() : 0);
+        destination.cutoffHz = finiteOr(slot.cutoff != nullptr ? slot.cutoff->get() : 2000.0f, 2000.0f);
+        destination.resonance = finiteOr(slot.resonance != nullptr ? slot.resonance->get() : 0.0f, 0.0f);
+        destination.drive = finiteOr(slot.drive != nullptr ? slot.drive->get() : 0.0f, 0.0f);
+        destination.keytrack = finiteOr(slot.keytrack != nullptr ? slot.keytrack->get() : 0.0f, 0.0f);
+        destination.filterMix = finiteOr(slot.filterMix != nullptr ? slot.filterMix->get() : 0.0f, 0.0f);
+        destination.filterAttackSeconds = finiteOr(slot.filterAttack != nullptr ? slot.filterAttack->get() : 0.01f, 0.01f);
+        destination.filterDecaySeconds = finiteOr(slot.filterDecay != nullptr ? slot.filterDecay->get() : 0.2f, 0.2f);
+        destination.filterSustain = finiteOr(slot.filterSustain != nullptr ? slot.filterSustain->get() : 0.8f, 0.8f);
+        destination.filterReleaseSeconds = finiteOr(slot.filterRelease != nullptr ? slot.filterRelease->get() : 0.4f, 0.4f);
+        destination.filterAmountSemitones = finiteOr(slot.filterAmount != nullptr ? slot.filterAmount->get() : 0.0f, 0.0f);
+        destination.lfo1ToCutoffSemitones = finiteOr(slot.lfo1ToCutoff != nullptr ? slot.lfo1ToCutoff->get() : 0.0f, 0.0f);
+        destination.lfo2ToPitchSemitones = finiteOr(slot.lfo2ToPitch != nullptr ? slot.lfo2ToPitch->get() : 0.0f, 0.0f);
+        for (int index = 0; index < xenmilenium::MinimalVoiceCore::lfoCount; ++index)
+        {
+            const auto& lfo = slot.lfo[static_cast<std::size_t>(index)];
+            auto& destinationLfo = destination.lfo[static_cast<std::size_t>(index)];
+            destinationLfo.shape = juce::jlimit(0, xenmilenium::MinimalVoiceCore::lfoShapeCount - 1, lfo.shape != nullptr ? lfo.shape->getIndex() : 0);
+            destinationLfo.retrig = lfo.retrig != nullptr && lfo.retrig->get();
+            destinationLfo.unipolar = lfo.polarity != nullptr && lfo.polarity->getIndex() == 0;
+            destinationLfo.sync = lfo.sync != nullptr && lfo.sync->get();
+            destinationLfo.rateHz = finiteOr(lfo.rateHz != nullptr ? lfo.rateHz->get() : 1.0f, 1.0f);
+            destinationLfo.rateSync = juce::jlimit(0, xenmilenium::MinimalVoiceCore::syncDivisionCount - 1, lfo.rateSync != nullptr ? lfo.rateSync->getIndex() : 6);
+            destinationLfo.freeVariation = finiteOr(lfo.freeVariation != nullptr ? lfo.freeVariation->get() : 0.0f, 0.0f);
+        }
     }
 
     return controls;
